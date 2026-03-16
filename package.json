@@ -1,0 +1,36 @@
+{
+  "name": "file-workspace-w-bon",
+  "version": "1.0.0",
+  "description": "This is an enterprise-level, microservices-based platform designed for secure file storage and real-time team collaboration. Built with scalability in mind, the system uses Apache Kafka for asynchronous background processing to ensure a smooth, zero-lag user experience even under heavy loads. It goes beyond basic cloud storage by offering data deduplication, robust access controls, and deep full-text document search.",
+  "private":true,
+  "workspaces":[
+    "shared",
+    "gateway",
+    "service/*"
+  ],
+  "main": "index.js",
+  "scripts": {
+    "dev:gateway":"npm -w gateway run dev",
+    "dev:auth":"npm -w auth-service run dev",
+    "dev:file":"npm -w file-service run dev",
+    "dev:workspace":"npm -w workspace-service run dev",
+    "dev:chat":"npm -w chat-service run dev",
+    "dev:search":"npm -w search-worker run dev",
+    "dev:admin":"npm -w admin-service run dev",
+    "dev:storage":"npm -w storage-service run dev",
+    "dev:notification":"npm -w notification-service run dev",
+    "infra:up":"docker compose -f infra/docker-compose.yml up -d",
+    "infra:down":"docker compose -f infra/docker-compose.yml down"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DucNguyenhuuminh/distributed-workspace-system.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/DucNguyenhuuminh/distributed-workspace-system/issues"
+  },
+  "homepage": "https://github.com/DucNguyenhuuminh/distributed-workspace-system#readme"
+}

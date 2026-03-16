@@ -1,0 +1,19 @@
+{
+  "name": "shared",
+  "version": "1.0.0",
+  "description": "The shared library for whole system",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "kafkajs":"^2.2.4",
+    "jsonwebtoken":"^9.0.2",
+    "winston":"^3.11.0",
+    "dotenv":"^16.4.5"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
