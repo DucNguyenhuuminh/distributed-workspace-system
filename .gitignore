@@ -1,0 +1,57 @@
+# ==========================================
+# 1. Các file thư viện siêu nặng của Node.js
+# ==========================================
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn.lock
+package-lock.json
+
+# ==========================================
+# 2. File cấu hình mật khẩu & Môi trường (CỰC KỲ QUAN TRỌNG)
+# Tuyệt đối không bao giờ đẩy file .env lên Git
+# ==========================================
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+*.pem
+*.key
+
+# ==========================================
+# 3. Thư mục chứa dữ liệu build hoặc test
+# ==========================================
+dist/
+build/
+coverage/
+.nyc_output/
+
+# ==========================================
+# 4. File rác của Hệ điều hành
+# ==========================================
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ==========================================
+# 5. File cấu hình của các phần mềm code (IDE)
+# ==========================================
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ==========================================
+# 6. Thư mục lưu trữ dữ liệu ảo (Nếu có map với Docker)
+# ==========================================
+data/
+db/
+logs/
+*.log
