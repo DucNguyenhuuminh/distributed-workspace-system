@@ -49,7 +49,7 @@ Desktop.ini
 *.sw?
 
 # ==========================================
-# 6. Thư mục lưu trữ dữ liệu ảo (Nếu có map với Docker)
+# 6. Thư mục lưu trữ dữ liệu ảo
 # ==========================================
 data/
 db/
