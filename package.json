@@ -14,11 +14,8 @@
     "dev:auth":"npm -w auth-service run dev",
     "dev:file":"npm -w file-service run dev",
     "dev:workspace":"npm -w workspace-service run dev",
-    "dev:chat":"npm -w chat-service run dev",
     "dev:search":"npm -w search-worker run dev",
-    "dev:admin":"npm -w admin-service run dev",
     "dev:storage":"npm -w storage-service run dev",
-    "dev:notification":"npm -w notification-service run dev",
     "infra:up":"docker compose -f infra/docker-compose.yml up -d",
     "infra:down":"docker compose -f infra/docker-compose.yml down"
   },

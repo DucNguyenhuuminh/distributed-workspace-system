@@ -16,21 +16,21 @@ services:
         limits:
           memory: 256m
 
-  redis:
-    image: redis:7-alpine
-    container_name: workspace-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    deploy:
-      resources:
-        limits:
-          memory: 128m
-    command: >
-      redis-server
-      --maxmemory 96mb
-      --maxmemory-policy allkeys-lru
-      --save ""
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: workspace-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 128m
+  #   command: >
+  #     redis-server
+  #     --maxmemory 96mb
+  #     --maxmemory-policy allkeys-lru
+  #     --save ""
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
