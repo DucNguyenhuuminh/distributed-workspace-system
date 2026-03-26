@@ -17,7 +17,7 @@ async function register (req,res) {
             user,
         });
     }catch(err) {
-        return err.status(500).json({message: err.message});
+        return res.status(500).json({message: err.message});
     }
 }
 
@@ -56,7 +56,7 @@ async function login (req,res) {
             user,
         });
     }catch (err) {
-        return err.status(500).json({message: err.messgae});
+        return res.status(500).json({message: err.message});
     }
 }
 

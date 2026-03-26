@@ -9,7 +9,7 @@ const register_valid = Joi.object({
         'string.min': "Password has at least 6 characters",
         'any.required': "Password is needed"
     }),
-    fullname: Joi.string().min(4).required().messages({
+    username: Joi.string().min(4).required().messages({
         'string.min': "Username has at least 4 characters",
         'any.required': "Username is needed"
     }),
@@ -32,7 +32,7 @@ function validate (schema) {
         const {error, value} = schema.validate(req.body, {abortEarly: false});
         if (error) {
             const errors = error.details.map((d) => d.message);
-            return res.status(400).json({message: "Validation error"}, errors);
+            return res.status(400).json({message: "Validation error", errors});
         }
         req.body = value;
         next();

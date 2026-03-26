@@ -6,7 +6,7 @@
   "workspaces":[
     "shared",
     "gateway",
-    "service/*"
+    "services/*"
   ],
   "main": "index.js",
   "scripts": {
