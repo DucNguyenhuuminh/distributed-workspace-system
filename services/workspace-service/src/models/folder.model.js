@@ -11,6 +11,10 @@ const folderSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             required: true,
         },
+        ownerId:{
+            type: mongoose.Schema.Types.ObjectId,
+            default: null,
+        },
         parentId:{
             type: mongoose.Schema.Types.ObjectId,
             default: null,

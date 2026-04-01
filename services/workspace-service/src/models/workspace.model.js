@@ -13,7 +13,7 @@ const memberSchema = new mongoose.Schema(
         },
         permissions:{
             type: String,
-            enum: ["preview", "download"],
+            enum: ["preview", "download", "upload"],
             default: "preview",
         },
     }, {_id: false});
