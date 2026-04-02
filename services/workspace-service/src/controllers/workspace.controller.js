@@ -1,6 +1,27 @@
 const Workspace = require('../models/workspace.model');
 const Folder = require('../models/folder.model');
 
+//Helper
+async function check_workspace(workspace) {
+    if (!workspace) {
+        throw new Error("Workspace not exist");
+    }
+}
+
+async function check_member_permission(workspace, userId) {
+    const isMember = workspace.members.some((m) => m.userId.toString() === userId);
+    if (!isMember) {
+        throw new Error("You not have permission to access");
+    }
+}
+
+async function check_admin(workspace, adminId) {
+    const isAdmin = workspace.members.find((m) => m.userId.toString() === adminId);
+    if (!isAdmin || isAdmin.role !== "ADMIN") {
+        throw new Error("Only Admin can add members");
+    }
+}
+
 //-------POST /api/workspaces-----------
 async function createWorkspace(req,res) {
     try {
@@ -41,14 +62,8 @@ async function getWorkspaceById(req,res) {
         const workspaceId = req.params.id;
 
         const workspace = await Workspace.findById(workspaceId);
-        if (!workspace) {
-            return res.status(404).json({message: "Workspace not exist"});
-        }
-
-        const isMember = workspace.members.some((m) => m.userId.toString() === userId);
-        if (!isMember) {
-            return res.status(403).json({message: "You not have permission to access"});
-        }
+        check_workspace(workspace);
+        check_member_permission(workspace,  userId);
 
         return res.json({data: workspace});
     } catch (err) {
@@ -60,18 +75,12 @@ async function getWorkspaceById(req,res) {
 async function addMember(req,res) {
     try {
         const adminId = req.user.userId;
-        const workspaceId = req.workspace.workspaceId;
+        const workspaceId = req.params.id;
         const {email,permissions} = req.body;
 
         const workspace = await Workspace.findById(workspaceId);
-        if (!workspace) {
-            return res.status(404).json({message: "Workspace not exist"});
-        }
-
-        const isAdmin = workspace.members.find((m) => m.userId.toString() === adminId);
-        if (!isAdmin || isAdmin.role !== "ADMIN") {
-            return res.status(403).json({message: "Only Admin can add members"});
-        }
+        check_workspace(workspace);
+        check_admin(workspace, adminId);
 
         const User = require('../../../auth-service/src/models/auth.model');
         const targetUser = await User.findOne({email});
@@ -87,7 +96,7 @@ async function addMember(req,res) {
         workspace.members.push({
             userId: targetUser._id,
             role: "MEMBER",
-            permissions: permissions || "preview",
+            permissions: permissions || ["preview"],
         });
         await workspace.save();
 
@@ -102,28 +111,22 @@ async function deleteWorkspace(req,res) {
     try {
         const adminId = req.user.userId;
         const workspaceId = req.params.id;
-        
-        const workspace = await Workspace.findById(workspaceId);
-        if (!workspace) {
-            return res.status(404).json({message: "Workspace not exist"});
-        }
 
-        const isAdmin = workspace.members.find((m) => m.userId.toString() === adminId);
-        if (!isAdmin || isAdmin.role !== "ADMIN") {
-            return res.status(403).json({message: "Only Admin can remove workspace"});
-        }
+        const workspace = await Workspace.findById(workspaceId);
+        check_workspace(workspaceId);
+        check_admin(workspace, adminId);
 
         const Document = require('../models/document.model');
 
         await Folder.updateMany(
             {workspaceId},
-            {deletAt: new Date()}
+            {deletedAt: new Date()}
         );
         await Document.updateMany(
             {workspaceId},
-            {deleteAt: new Date()}
+            {deletedAt: new Date()}
         );
-        await Workspace.findByIdAndUpdate(workspaceId,{deletAt: new Date()});
+        await Workspace.findByIdAndUpdate(workspaceId,{deletedAt: new Date()});
 
         return res.json({message: "Deleted workspace"});
     } catch(err) {
@@ -136,17 +139,11 @@ async function removeMember(req,res) {
     try {
         const adminId = req.user.userId;
         const workspaceId = req.params.id;
-        const targetUserId = req.params.userId;
+        const targetUserId = req.params.targetUserId;
 
         const workspace = await Workspace.findById(workspaceId);
-        if (!workspace) {
-            return res.status(404).json({message: "Workspace not exist"});
-        }
-        
-        const isAdmin = workspace.members.find((m) => m.userId.toString() === adminId);
-        if (!isAdmin || isAdmin.role !== "ADMIN") {
-            return res.status(403).json({message: "Only Admin can remove workspace"});
-        }
+        check_workspace(workspaceId);
+        check_admin(workspace, adminId);
 
         const targetMember = workspace.members.find((m) => m.userId.toString() === targetUserId);
         if (!targetMember) {

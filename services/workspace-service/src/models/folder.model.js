@@ -23,8 +23,18 @@ const folderSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             required: true,
         },
+        deletedAt:{
+            type: Date,
+            default: null,
+        },
     },
     {timestamp: true}
 );
+
+folderSchema.pre(/^find/,function() {
+    if (!this.getOptions()._recursed) {
+        this.where({deletedAt: null});
+    }
+});
 
 module.exports = mongoose.model("Folders",folderSchema);

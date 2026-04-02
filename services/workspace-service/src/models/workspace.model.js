@@ -30,8 +30,18 @@ const workspaceSchema = new mongoose.Schema(
             required: true,
         },
         members: [memberSchema],
+        deletedAt:{
+            type: Date,
+            default: null,
+        },
     },
     {timestamps: true}
 );
+
+workspaceSchema.pre(/^find/, function() {
+    if (!this.getOptions()._recursed) {
+        this.where({deletedAt: null});
+    }
+});
 
 module.exports = mongoose.model("Workspaces", workspaceSchema);
