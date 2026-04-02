@@ -11,7 +11,7 @@ router.post('/', validate(create_workspace_valid), createWorkspace);
 router.get('/', getWorkspaces);
 router.get('/:id', getWorkspaceById);
 router.post('/:id/members', validate(add_member_valid), addMember);
-router.delete('/:id/members/:userId', removeMember);
+router.delete('/:id/members/:targetUserId', removeMember);
 router.delete('/:id',deleteWorkspace);
 
 module.exports = router;

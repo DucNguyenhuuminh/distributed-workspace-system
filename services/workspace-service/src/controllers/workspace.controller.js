@@ -1,25 +1,29 @@
+const axios = require('axios');
 const Workspace = require('../models/workspace.model');
 const Folder = require('../models/folder.model');
 
 //Helper
 async function check_workspace(workspace) {
     if (!workspace) {
-        throw new Error("Workspace not exist");
+        return { status: 404, message: "Workspace not exist" };
     }
+    return null;
 }
 
 async function check_member_permission(workspace, userId) {
     const isMember = workspace.members.some((m) => m.userId.toString() === userId);
     if (!isMember) {
-        throw new Error("You not have permission to access");
+        return { status: 403, message: "You do not have permission to access" };
     }
+    return null;
 }
 
 async function check_admin(workspace, adminId) {
-    const isAdmin = workspace.members.find((m) => m.userId.toString() === adminId);
-    if (!isAdmin || isAdmin.role !== "ADMIN") {
-        throw new Error("Only Admin can add members");
+    const member = workspace.members.find((m) => m.userId.toString() === adminId);
+    if (!member || member.role !== 'ADMIN') {
+        return { status: 403, message: "Only Admin can perform this action" };
     }
+    return null;
 }
 
 //-------POST /api/workspaces-----------
@@ -62,8 +66,11 @@ async function getWorkspaceById(req,res) {
         const workspaceId = req.params.id;
 
         const workspace = await Workspace.findById(workspaceId);
-        check_workspace(workspace);
-        check_member_permission(workspace,  userId);
+         const wsError = check_workspace(workspace);
+        if (wsError) return res.status(wsError.status).json({ message: wsError.message });
+
+        const permError = check_member_permission(workspace, userId);
+        if (permError) return res.status(permError.status).json({ message: permError.message });
 
         return res.json({data: workspace});
     } catch (err) {
@@ -71,7 +78,7 @@ async function getWorkspaceById(req,res) {
     }
 }
 
-//-------GET /api/workspaces/:id/members-----------
+//-------POST /api/workspaces/:id/members-----------
 async function addMember(req,res) {
     try {
         const adminId = req.user.userId;
@@ -79,13 +86,21 @@ async function addMember(req,res) {
         const {email,permissions} = req.body;
 
         const workspace = await Workspace.findById(workspaceId);
-        check_workspace(workspace);
-        check_admin(workspace, adminId);
+        const wsError = check_workspace(workspace);
+        if (wsError) return res.status(wsError.status).json({ message: wsError.message });
 
-        const User = require('../../../auth-service/src/models/auth.model');
-        const targetUser = await User.findOne({email});
-        if (!targetUser) {
-            return res.status(404).json({message: "User not exist in the system"});
+        const adminError = check_admin(workspace, adminId);
+        if (adminError) return res.status(adminError.status).json({ message: adminError.message });
+
+        let targetUser;
+        try {
+            const response = await axios.get(`${process.env.AUTH_SERVICE_URL}/api/auth/internal/find-by-email`,{params: {email}});
+            targetUser = response.data.data;
+        } catch(err) {
+            if (err.response?.status === 404) {
+                return res.status(404).json({message: "User not exist in this system"});
+            }
+            return res.status(500).json({message: "Cannot connect to auth-service"});
         }
 
         const already = workspace.members.some((m) => m.userId.toString() === targetUser._id.toString());
@@ -113,8 +128,11 @@ async function deleteWorkspace(req,res) {
         const workspaceId = req.params.id;
 
         const workspace = await Workspace.findById(workspaceId);
-        check_workspace(workspaceId);
-        check_admin(workspace, adminId);
+        const wsError = check_workspace(workspace);        
+        if (wsError) return res.status(wsError.status).json({ message: wsError.message });
+
+        const adminError = check_admin(workspace, adminId);
+        if (adminError) return res.status(adminError.status).json({ message: adminError.message });
 
         const Document = require('../models/document.model');
 
@@ -142,8 +160,12 @@ async function removeMember(req,res) {
         const targetUserId = req.params.targetUserId;
 
         const workspace = await Workspace.findById(workspaceId);
-        check_workspace(workspaceId);
-        check_admin(workspace, adminId);
+        const wsError = check_workspace(workspace);      // ← truyền workspace
+        if (wsError) return res.status(wsError.status).json({ message: wsError.message });
+
+        const adminError = check_admin(workspace, adminId);
+        if (adminError) return res.status(adminError.status).json({ message: adminError.message });
+
 
         const targetMember = workspace.members.find((m) => m.userId.toString() === targetUserId);
         if (!targetMember) {

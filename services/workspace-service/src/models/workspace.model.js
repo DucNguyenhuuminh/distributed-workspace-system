@@ -12,9 +12,11 @@ const memberSchema = new mongoose.Schema(
             default: "MEMBER",
         },
         permissions:{
-            type: String,
-            enum: ["preview", "download", "upload"],
-            default: "preview",
+            type: [{
+                type: String,
+                enum: ["preview", "download", "upload"]
+            }],
+            default: ["preview"],
         },
     }, {_id: false});
 

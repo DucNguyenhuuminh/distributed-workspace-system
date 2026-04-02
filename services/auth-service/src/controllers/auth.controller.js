@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/auth.model');
 
+//-------PUT /api/auth/register-----------
 async function register (req,res) {
     try {
         const {email,password,username,globalRole} = req.body;
@@ -21,13 +22,14 @@ async function register (req,res) {
     }
 }
 
+//-------POST /api/auth/login-----------
 async function login (req,res) {
     try {
         const {email,password} = req.body;
 
         const user = await User.findOne({email});
         if (!user) {
-            return res.status(401).json({messgae: "Email or password not true"});
+            return res.status(401).json({message: "Email or password not true"});
         }
 
         if (!user.isActive) {
@@ -60,6 +62,7 @@ async function login (req,res) {
     }
 }
 
+//-------get /api/auth/profile-----------
 async function getProfile (req,res) {
     try {
         const user = await User.findById(req.user.userId);
@@ -72,4 +75,22 @@ async function getProfile (req,res) {
     }
 }
 
-module.exports = {register,login,getProfile};
+//-------GET /api/auth/internal/find-by-email-----------
+async function findByEmail(req,res) {
+    try {
+        const {email} = req.query;
+        if (!email) {
+            return res.status(400).json({message: "Email is needed"});
+        }
+
+        const user = await User.findOne({email});
+        if (!user) {
+            return res.status(404).json({message: "User not exist"});
+        }
+        return res.json({data: user});
+    } catch(err) {
+        return res.status(500).json({message: err.message});
+    }
+}
+
+module.exports = {register,login,getProfile,findByEmail};
