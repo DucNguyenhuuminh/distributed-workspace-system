@@ -13,7 +13,7 @@ const memberSchema = new mongoose.Schema(
         },
         permissions:{
             type: [{
-                type: String,
+                type: [],
                 enum: ["preview", "download", "upload"]
             }],
             default: ["preview"],
@@ -29,7 +29,7 @@ const workspaceSchema = new mongoose.Schema(
         },
         createdBy:{
             type: mongoose.Schema.Types.ObjectId,
-            required: true,
+            default: null,
         },
         members: [memberSchema],
         deletedAt:{

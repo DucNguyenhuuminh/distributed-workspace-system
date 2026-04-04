@@ -8,18 +8,18 @@ const create_workspace_valid = Joi.object({
 });
 
 const add_member_valid = Joi.object({
-    userId: Joi.string().email().required().messages({
+    email: Joi.string().email().required().messages({
         'string.email': "Email not valid",
         'any.required': "User's email is needed",
     }),
-    permissions: Joi.string().valid('preview', 'download','upload').default('preview'),
+    permissions: Joi.array().items(Joi.string().valid("preview", "download","upload")).default("preview"),
 });
 
 function validate(schema) {
     return (req,res,next) => {
         const {error, value} = schema.validate(req.body, {abortEarly: false});
         if (error) {
-            const errors = error.details.map((d) => d.messsage);
+            const errors = error.details.map((d) => d.message);
             return res.status(400).json({message: "Validation error ", errors});
         }
         req.body = value;

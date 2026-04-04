@@ -2,22 +2,26 @@
   "name": "file-workspace-w-bon",
   "version": "1.0.0",
   "description": "This is an enterprise-level, microservices-based platform designed for secure file storage and real-time team collaboration. Built with scalability in mind, the system uses Apache Kafka for asynchronous background processing to ensure a smooth, zero-lag user experience even under heavy loads. It goes beyond basic cloud storage by offering data deduplication, robust access controls, and deep full-text document search.",
-  "private":true,
-  "workspaces":[
+  "private": true,
+  "workspaces": [
     "shared",
     "gateway",
     "services/*"
   ],
   "main": "index.js",
   "scripts": {
-    "dev:gateway":"npm -w gateway run dev",
-    "dev:auth":"npm -w auth-service run dev",
-    "dev:file":"npm -w file-service run dev",
-    "dev:workspace":"npm -w workspace-service run dev",
-    "dev:search":"npm -w search-worker run dev",
-    "dev:storage":"npm -w storage-service run dev",
-    "infra:up":"docker compose -f infra/docker-compose.yml up -d",
-    "infra:down":"docker compose -f infra/docker-compose.yml down"
+    "dev:gateway": "npm -w gateway run dev",
+    "dev:auth": "npm -w auth-service run dev",
+    "dev:file": "npm -w file-service run dev",
+    "dev:workspace": "npm -w workspace-service run dev",
+    "dev:search": "npm -w search-worker run dev",
+    "dev:storage": "npm -w storage-service run dev",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "test": "jest",
+    "test:unit": "jest tests/unit",
+    "test:integration": "jest tests/integration",
+    "test:watch": "jest --watchAll"
   },
   "repository": {
     "type": "git",
@@ -29,5 +33,11 @@
   "bugs": {
     "url": "https://github.com/DucNguyenhuuminh/distributed-workspace-system/issues"
   },
-  "homepage": "https://github.com/DucNguyenhuuminh/distributed-workspace-system#readme"
+  "homepage": "https://github.com/DucNguyenhuuminh/distributed-workspace-system#readme",
+  "devDependencies": {
+    "jest": "^30.3.0",
+    "mongodb-memory-server": "^11.0.1",
+    "node-mocks-http": "^1.17.2",
+    "supertest": "^7.2.2"
+  }
 }

@@ -5,6 +5,7 @@ const create_folder_valid = Joi.object({
         'any.required': "Folder's name is needed",
     }),
     parentId: Joi.string().allow(null, '').default(null),
+    workspaceId: Joi.string().allow(null,'').default(null),
 });
 
 const rename_folder_valid = Joi.object({

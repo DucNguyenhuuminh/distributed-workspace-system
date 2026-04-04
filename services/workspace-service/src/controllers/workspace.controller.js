@@ -1,30 +1,7 @@
 const axios = require('axios');
 const Workspace = require('../models/workspace.model');
 const Folder = require('../models/folder.model');
-
-//Helper
-async function check_workspace(workspace) {
-    if (!workspace) {
-        return { status: 404, message: "Workspace not exist" };
-    }
-    return null;
-}
-
-async function check_member_permission(workspace, userId) {
-    const isMember = workspace.members.some((m) => m.userId.toString() === userId);
-    if (!isMember) {
-        return { status: 403, message: "You do not have permission to access" };
-    }
-    return null;
-}
-
-async function check_admin(workspace, adminId) {
-    const member = workspace.members.find((m) => m.userId.toString() === adminId);
-    if (!member || member.role !== 'ADMIN') {
-        return { status: 403, message: "Only Admin can perform this action" };
-    }
-    return null;
-}
+const Document = require('../models/document.model');
 
 //-------POST /api/workspaces-----------
 async function createWorkspace(req,res) {
@@ -66,12 +43,7 @@ async function getWorkspaceById(req,res) {
         const workspaceId = req.params.id;
 
         const workspace = await Workspace.findById(workspaceId);
-         const wsError = check_workspace(workspace);
-        if (wsError) return res.status(wsError.status).json({ message: wsError.message });
-
-        const permError = check_member_permission(workspace, userId);
-        if (permError) return res.status(permError.status).json({ message: permError.message });
-
+        
         return res.json({data: workspace});
     } catch (err) {
         return res.status(500).json({message: err.message});
@@ -86,11 +58,6 @@ async function addMember(req,res) {
         const {email,permissions} = req.body;
 
         const workspace = await Workspace.findById(workspaceId);
-        const wsError = check_workspace(workspace);
-        if (wsError) return res.status(wsError.status).json({ message: wsError.message });
-
-        const adminError = check_admin(workspace, adminId);
-        if (adminError) return res.status(adminError.status).json({ message: adminError.message });
 
         let targetUser;
         try {
@@ -128,14 +95,7 @@ async function deleteWorkspace(req,res) {
         const workspaceId = req.params.id;
 
         const workspace = await Workspace.findById(workspaceId);
-        const wsError = check_workspace(workspace);        
-        if (wsError) return res.status(wsError.status).json({ message: wsError.message });
-
-        const adminError = check_admin(workspace, adminId);
-        if (adminError) return res.status(adminError.status).json({ message: adminError.message });
-
-        const Document = require('../models/document.model');
-
+    
         await Folder.updateMany(
             {workspaceId},
             {deletedAt: new Date()}
@@ -160,12 +120,6 @@ async function removeMember(req,res) {
         const targetUserId = req.params.targetUserId;
 
         const workspace = await Workspace.findById(workspaceId);
-        const wsError = check_workspace(workspace);      // ← truyền workspace
-        if (wsError) return res.status(wsError.status).json({ message: wsError.message });
-
-        const adminError = check_admin(workspace, adminId);
-        if (adminError) return res.status(adminError.status).json({ message: adminError.message });
-
 
         const targetMember = workspace.members.find((m) => m.userId.toString() === targetUserId);
         if (!targetMember) {

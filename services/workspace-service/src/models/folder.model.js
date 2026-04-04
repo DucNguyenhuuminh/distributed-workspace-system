@@ -9,7 +9,7 @@ const folderSchema = new mongoose.Schema(
         },
         workspaceId:{
             type: mongoose.Schema.Types.ObjectId,
-            required: true,
+            default: null,
         },
         ownerId:{
             type: mongoose.Schema.Types.ObjectId,
@@ -28,7 +28,7 @@ const folderSchema = new mongoose.Schema(
             default: null,
         },
     },
-    {timestamp: true}
+    {timestamps: true}
 );
 
 folderSchema.pre(/^find/,function() {
