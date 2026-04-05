@@ -1,7 +1,13 @@
+const mongoose = require('mongoose');
 const Workspace = require('../models/workspace.model');
 
 async function checkWorkspaceExists(req,res,next) {
     try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ message: "Invalid Workspace ID format" });
+        }
+
         const workspace = await Workspace.findById(req.params.id);
         if (!workspace) {
             return res.status(404).json({ message: "Workspace not exist" });
@@ -30,7 +36,7 @@ function requireMemberRole(req,res,next) {
 
     const isMember = workspace.members.some((m) => m.userId.toString() === userId);
     if (!isMember) {
-        return { status: 403, message: "You do not have permission to access" };
+        return res.status(403).json({message: "You do not have permission to access" });
     }
     next();
 }

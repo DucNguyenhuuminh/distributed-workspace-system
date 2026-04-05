@@ -20,7 +20,7 @@ async function createWorkspace(req,res) {
         });
 
         return res.status(201).json({message: "Create workspace successfully", data: workspace});
-    } catch (err) {
+    } catch(err) {
         return res.status(500).json({message: err.message});
     }
 }
@@ -31,7 +31,7 @@ async function getWorkspaces(req,res) {
         const userId = req.user.userId;
         const workspaces = await Workspace.find({'members.userId': userId});
         return res.json({data: workspaces});
-    } catch (err) {
+    } catch(err) {
         return res.status(500).json({message: err.message});
     }
 }
@@ -39,13 +39,8 @@ async function getWorkspaces(req,res) {
 //-------GET /api/workspaces/:id-----------
 async function getWorkspaceById(req,res) {
     try {
-        const userId = req.user.userId;
-        const workspaceId = req.params.id;
-
-        const workspace = await Workspace.findById(workspaceId);
-        
-        return res.json({data: workspace});
-    } catch (err) {
+        return res.json({data: req.workspace});
+    } catch(err) {
         return res.status(500).json({message: err.message});
     }
 }
@@ -53,11 +48,8 @@ async function getWorkspaceById(req,res) {
 //-------POST /api/workspaces/:id/members-----------
 async function addMember(req,res) {
     try {
-        const adminId = req.user.userId;
-        const workspaceId = req.params.id;
-        const {email,permissions} = req.body;
-
-        const workspace = await Workspace.findById(workspaceId);
+        const workspace = req.workspace;
+        const {email, permissions} = req.body;
 
         let targetUser;
         try {
@@ -91,11 +83,9 @@ async function addMember(req,res) {
 //-------DELETE /api/workspaces/:id-----------
 async function deleteWorkspace(req,res) {
     try {
-        const adminId = req.user.userId;
-        const workspaceId = req.params.id;
-
-        const workspace = await Workspace.findById(workspaceId);
-    
+        const workspace = req.workspace;
+        const workspaceId = workspace._id;
+            
         await Folder.updateMany(
             {workspaceId},
             {deletedAt: new Date()}
@@ -104,7 +94,8 @@ async function deleteWorkspace(req,res) {
             {workspaceId},
             {deletedAt: new Date()}
         );
-        await Workspace.findByIdAndUpdate(workspaceId,{deletedAt: new Date()});
+        workspace.deletedAt = new Date();
+        await workspace.save();
 
         return res.json({message: "Deleted workspace"});
     } catch(err) {
@@ -115,23 +106,31 @@ async function deleteWorkspace(req,res) {
 //-------DELETE /api/workspaces/:id/members/:targetUserId-----------
 async function removeMember(req,res) {
     try {
-        const adminId = req.user.userId;
-        const workspaceId = req.params.id;
+        const currentUserId = req.user.userId;
         const targetUserId = req.params.targetUserId;
-
-        const workspace = await Workspace.findById(workspaceId);
+        const workspace = req.workspace;
 
         const targetMember = workspace.members.find((m) => m.userId.toString() === targetUserId);
         if (!targetMember) {
             return res.status(400).json({message: "Member not in this workspace"});
         }
 
-        const adminCount = workspace.members.filter((m) => m.role === "ADMIN").length;
-        const isSelfRemove = targetUserId === adminId;
-        if (isSelfRemove && adminCount === 1) {
-            return res.status(400).json({message: "Cannot out workspace if only Admin"});
+        const currentUserData = workspace.members.find((m) => m.userId.toString() === currentUserId);
+        if (!currentUserData) {
+            return res.status(403).json({message: "You are not a member of this workspace"});
         }
 
+        const isSelfRemove = targetUserId === currentUserId;
+        const isAdmin = currentUserData.role === "ADMIN";
+        if (!isSelfRemove && !isAdmin) {
+            return res.status(403).json({message: "Only Admin can remove other members"})
+        }
+        
+        const adminCount = workspace.members.filter((m) => m.role === "ADMIN").length;
+        if (isSelfRemove && targetMember.role === "ADMIN" && adminCount === 1) {
+            return res.status(400).json({message: "Cannot leave workspace if you are only Admin"});
+        }
+        
         workspace.members = workspace.members.filter((m) => m.userId.toString() !== targetUserId);
         await workspace.save();
 
