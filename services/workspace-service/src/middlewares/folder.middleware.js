@@ -45,6 +45,29 @@ function checkFolderPermission(req,res,next) {
     next();
 }
 
+function requireFolderEditPermission(req,res,next) {
+    const userId = req.user.userId;
+    const folder = req.folder;
+
+    if (!folder.workspaceId) {
+        if (folder.createdBy.toString() !== userId) {
+            return res.status(403).json({message: "No permission to modify this folder"});
+        }
+    }else {
+        const workspace = req.workspace;
+        const targetMember = workspace.members.find((m) => m.userId.toString === userId);
+        if (!targetMember) {
+            return res.status(403).json({message: "You are not a member of this workspace"});
+        }
+
+        const canEdit = targetMember.role === "ADMIN" || targetMember.permissions.includes("upload");
+        if (!canEdit) {
+            return res.status(403).json({message: "No permission to modify folder in this workspace"});
+        }
+    }
+    next();
+}
+
 async function verifyWorkspaceAccess(req,res,next) {
     try {
         const workspaceId = req.body.workspaceId || req.query.workspaceId;
@@ -70,27 +93,4 @@ async function verifyWorkspaceAccess(req,res,next) {
     }
 }
 
-function requireFolderEditPermission(req,res,next) {
-    const userId = req.user.userId;
-    const folder = req.folder;
-
-    if (!folder.workspaceId) {
-        if (folder.createdBy.toString() !== userId) {
-            return res.status(403).json({message: "No permission to modify this folder"});
-        }
-    }else {
-        const workspace = req.workspace;
-        const targetMember = workspace.members.find((m) => m.userId.toString === userId);
-        if (!targetMember) {
-            return res.status(403).json({message: "You are not a member of this workspace"});
-        }
-
-        const canEdit = targetMember.role === "ADMIN" || targetMember.permissions.includes("upload");
-        if (!canEdit) {
-            return res.status(403).json({message: "No permission to modify folder in this workspace"});
-        }
-    }
-    next();
-}
-
-module.exports = {checkFolderExists, checkFolderPermission, verifyWorkspaceAccess};
+module.exports = {checkFolderExists, checkFolderPermission, verifyWorkspaceAccess, requireFolderEditPermission};
