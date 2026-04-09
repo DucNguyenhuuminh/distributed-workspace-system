@@ -7,11 +7,11 @@ const {authMiddleware} = require('shared');
 
 router.use(authMiddleware);
 
-router.post('/', validate(create_folder_valid), verifyWorkspaceAccess,createFolder);
-router.get('/', verifyWorkspaceAccess, getFolders);
-router.get('/:id', checkFolderExists, checkFolderPermission, getFolderById);
-router.put('/:id/rename', validate(rename_folder_valid), checkFolderExists, requireFolderEditPermission, renameFolder);
-router.delete('/:id', checkFolderExists, requireFolderEditPermission, deleteFolder);
-router.put('/:id/move', checkFolderExists, requireFolderEditPermission, moveFolder);
+router.post('/',                validate(create_folder_valid), verifyWorkspaceAccess,createFolder);
+router.get('/',                 verifyWorkspaceAccess, getFolders);
+router.get('/:id',              checkFolderExists, checkFolderPermission, getFolderById);
+router.put('/:id/rename',       validate(rename_folder_valid), checkFolderExists, requireFolderEditPermission, renameFolder);
+router.delete('/:id',           checkFolderExists, requireFolderEditPermission, deleteFolder);
+router.put('/:id/move',         checkFolderExists, requireFolderEditPermission, moveFolder);
 
 module.exports = router;

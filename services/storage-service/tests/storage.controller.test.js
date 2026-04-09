@@ -46,19 +46,21 @@ describe('POST /api/storage/multipart/init', () => {
     const res = await request(app)
       .post('/api/storage/multipart/init')
       .send({
-        filename: 'test-video.mp4',  
-        content: 'video/mp4',
-        totalChunks: 3,
+        filename: 'page.html',  
+        content: 'text/html',
+        totalChunks: 5,
       });
 
     expect(res.status).toBe(201);
     expect(res.body.data).toHaveProperty('uploadId', fakeUploadId);
     expect(res.body.data).toHaveProperty('objectName');
-    expect(res.body.data.presignedURLs).toHaveLength(3);
+    expect(res.body.data.presignedURLs).toHaveLength(5);
 
     expect(res.body.data.presignedURLs[0]).toContain('chunk=1');
     expect(res.body.data.presignedURLs[1]).toContain('chunk=2');
-    expect(res.body.data.presignedURLs[2]).toContain('chunk=3');
+    expect(res.body.data.presignedURLs[2]).toContain('chunk=3')
+    expect(res.body.data.presignedURLs[3]).toContain('chunk=4')
+    expect(res.body.data.presignedURLs[4]).toContain('chunk=5');
   });
 
   test('presignedUrl được gọi đúng số lần = totalChunks', async () => {

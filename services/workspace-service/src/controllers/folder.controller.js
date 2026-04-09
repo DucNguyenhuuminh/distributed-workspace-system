@@ -1,6 +1,5 @@
 const Workspace = require('../models/workspace.model');
 const Folder = require('../models/folder.model');
-const Document = require('../models/document.model');
 const {getBreadcrumbPath, getAllDescendantIds, isCircularMove} = require('../utils/folder.util');
 
 

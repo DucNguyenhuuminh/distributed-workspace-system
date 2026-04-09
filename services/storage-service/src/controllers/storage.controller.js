@@ -44,7 +44,10 @@ async function initMultipartUpload(req,res) {
 async function completeMultipartUpload(req,res) {
     try {
         const {uploadId, objectName, etags} = req.body;
-        const sortedEtags = [...etags].sort((a,b) => a.partNumber - b.partNumber);
+        const sortedEtags = [...etags].map(e => ({
+            part: e.partNumber,
+            etag: e.etag
+        })).sort((a,b) => a.partNumber - b.partNumber);
 
         await minioClient.completeMultipartUpload(
             bucketName,
@@ -59,4 +62,36 @@ async function completeMultipartUpload(req,res) {
     }
 }
 
-module.exports = {initMultipartUpload, completeMultipartUpload}
+//-------GET /api/storage/file/url-----------
+async function getDownloadURL(req,res) {
+    try {
+        const {objectName} = req.body;
+
+        if (!objectName) {
+            return res.status(400).json({message: "Object name is required"});
+        }
+
+        const url = await minioClient.presignedGetObject(
+            bucketName,
+            objectName,
+            3600
+        );
+        return res.json({message: "Get download URL successfully", data: {url}});
+    } catch(err) {
+        return res.status(500).json({message: err.message});
+    }
+}
+
+//-------DELETE /api/storage/file/-----------
+async function deleteDupFile(req,res) {
+    try {
+        const {objectName} = req.body;
+
+        await minioClient.removeObject(bucketName, objectName);
+        return res.json({message: "Delete file successfully"});
+    } catch(err) {
+        return res.status(500).json({message: err.message});
+    }
+}
+
+module.exports = {initMultipartUpload, completeMultipartUpload, getDownloadURL, deleteDupFile};

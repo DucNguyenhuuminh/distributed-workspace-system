@@ -1,7 +1,6 @@
 const axios = require('axios');
 const Workspace = require('../models/workspace.model');
 const Folder = require('../models/folder.model');
-const Document = require('../models/document.model');
 
 //-------POST /api/workspaces-----------
 async function createWorkspace(req,res) {
