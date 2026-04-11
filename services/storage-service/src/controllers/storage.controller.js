@@ -24,7 +24,7 @@ async function initMultipartUpload(req,res) {
                     'PUT',
                     bucketName,
                     objectName,
-                    3600,
+                    7*3600,
                     {
                         uploadId,
                         partNumber,
@@ -65,16 +65,24 @@ async function completeMultipartUpload(req,res) {
 //-------GET /api/storage/file/url-----------
 async function getDownloadURL(req,res) {
     try {
-        const {objectName} = req.body;
+        const {objectName, originalName, action} = req.body;
 
         if (!objectName) {
             return res.status(400).json({message: "Object name is required"});
         }
 
+        let resHeaders = {};
+        if (action === 'download') {
+            resHeaders = {'response-content-disposition': `attachment; filename="${originalName}"`};
+        }else {
+            resHeaders = {'response-content-disposition': 'inline'};
+        }
+
         const url = await minioClient.presignedGetObject(
             bucketName,
             objectName,
-            3600
+            7*3600,
+            resHeaders
         );
         return res.json({message: "Get download URL successfully", data: {url}});
     } catch(err) {

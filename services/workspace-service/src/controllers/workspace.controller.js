@@ -1,6 +1,8 @@
 const axios = require('axios');
 const Workspace = require('../models/workspace.model');
 const Folder = require('../models/folder.model');
+const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL || 'http://localhost:3002';
+const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:3001';
 
 //-------POST /api/workspaces-----------
 async function createWorkspace(req,res) {
@@ -52,7 +54,7 @@ async function addMember(req,res) {
 
         let targetUser;
         try {
-            const response = await axios.get(`${process.env.AUTH_SERVICE_URL}/api/auth/internal/find-by-email`,{params: {email}});
+            const response = await axios.get(`${AUTH_SERVICE_URL}/api/auth/internal/find-by-email`,{params: {email}});
             targetUser = response.data.data;
         } catch(err) {
             if (err.response?.status === 404) {
@@ -85,14 +87,12 @@ async function deleteWorkspace(req,res) {
         const workspace = req.workspace;
         const workspaceId = workspace._id;
             
+        await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-workspace/${workspaceId}`);
         await Folder.updateMany(
             {workspaceId},
             {deletedAt: new Date()}
         );
-        await Document.updateMany(
-            {workspaceId},
-            {deletedAt: new Date()}
-        );
+        
         workspace.deletedAt = new Date();
         await workspace.save();
 
