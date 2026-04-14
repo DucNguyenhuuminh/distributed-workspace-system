@@ -55,7 +55,7 @@ function requireFolderEditPermission(req,res,next) {
         }
     }else {
         const workspace = req.workspace;
-        const targetMember = workspace.members.find((m) => m.userId.toString === userId);
+        const targetMember = workspace.members.find((m) => m.userId.toString() === userId);
         if (!targetMember) {
             return res.status(403).json({message: "You are not a member of this workspace"});
         }
@@ -74,7 +74,7 @@ async function verifyWorkspaceAccess(req,res,next) {
         if (!workspaceId)   return next();
 
         if (!mongoose.Types.ObjectId.isValid(workspaceId)) {
-            return res.status(400).json({ message: "Invalid Workspace ID format" });
+            return res.status(400).json({message: "Invalid Workspace ID format" });
         }
 
         const userId = req.user.userId;
@@ -84,7 +84,7 @@ async function verifyWorkspaceAccess(req,res,next) {
         }
         const isMember = workspace.members.some((m) => m.userId.toString() === userId);
         if (!isMember) {
-            return res.status(403).json({message: "You do not have permission to access this folder"});
+            return res.status(403).json({message: "You do not have permission to access this workspace"});
         }
         req.workspace = workspace;
         next();

@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const {createFolder,renameFolder,deleteFolder,
-    moveFolder,getFolders,getFolderById} = require('../controllers/folder.controller');
+    moveFolder,getFolders,getFolderById, restoreFolder} = require('../controllers/folder.controller');
 const {create_folder_valid,rename_folder_valid,move_folder_valid,validate} = require('../validators/folder.validator');
 const {checkFolderExists,checkFolderPermission,verifyWorkspaceAccess,requireFolderEditPermission} = require('../middlewares/folder.middleware');
 const {authMiddleware} = require('shared');
@@ -12,6 +12,7 @@ router.get('/',                 verifyWorkspaceAccess, getFolders);
 router.get('/:id',              checkFolderExists, checkFolderPermission, getFolderById);
 router.put('/:id/rename',       validate(rename_folder_valid), checkFolderExists, requireFolderEditPermission, renameFolder);
 router.delete('/:id',           checkFolderExists, requireFolderEditPermission, deleteFolder);
-router.put('/:id/move',         checkFolderExists, requireFolderEditPermission, moveFolder);
+router.put('/:id/restore',      checkFolderExists, requireFolderEditPermission, restoreFolder);
+router.put('/:id/move',         validate(move_folder_valid), checkFolderExists, requireFolderEditPermission, moveFolder);
 
 module.exports = router;

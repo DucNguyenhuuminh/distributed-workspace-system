@@ -37,4 +37,4 @@ function validate(schema) {
     };
 }
 
-module.exports = {create_folder_valid, rename_folder_valid, validate};
+module.exports = {create_folder_valid, rename_folder_valid, move_folder_valid, validate};

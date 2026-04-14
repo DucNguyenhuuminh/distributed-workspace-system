@@ -1,5 +1,6 @@
 const Workspace = require('../models/workspace.model');
 const Folder = require('../models/folder.model');
+const axios = require('axios');
 const {getBreadcrumbPath, getAllDescendantIds, isCircularMove} = require('../utils/folder.util');
 const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL || 'http://localhost:3002';
 
@@ -83,13 +84,43 @@ async function deleteFolder(req,res) {
         const childFolderIds = await getAllDescendantIds(folderId);
         const allFolderIds = [folderId, ...childFolderIds];
 
-        await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders/${folderId}`);
+        await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders/${folderId}`,
+            {data: {folderIds: allFolderIds},
+            headers: {Authorization: req.headers.authorization}}
+        );
         await Folder.updateMany(
             {_id: {$in: allFolderIds}},
             {deletedAt: new Date()}
         );
 
         return res.json({message: "Folder deleted successfully"});
+    } catch(err) {
+        return res.status(500).json({message: err.message});
+    }
+}
+
+//-------PUT /api/folders/:id/restore-----------
+async function restoreFolder(req,res) {
+    try {
+        const folder = req.folder;
+
+        if (!folder.deletedAt) {
+            return res.status(400).json({message: "Folder not in the trash"});
+        }
+
+        const now = new Date();
+        const deletedTime = new Date(folder.deletedAt);
+        const diffInMilliseconds = now.getTime() - deletedTime.getTime();
+        const diffInDays = diffInMilliseconds/(1000*60*60*24);
+
+        if (diffInDays > 10) {
+            return res.status(400).json({message:   "Can not restore. File already in trash over 10 days"})
+        }
+
+        folder.deletedAt = null;
+        await folder.save();
+
+        return res.json({message: "Restore folder successfully", data: folder});
     } catch(err) {
         return res.status(500).json({message: err.message});
     }
@@ -166,7 +197,7 @@ async function moveFolder(req,res) {
         
         sourceFolder.parentId = newParentId || null;
         sourceFolder.workspaceId = finalWorkspaceId;
-        sourceFolder.ownerId = finalOwnerId;
+        sourceFolder.createdBy = finalOwnerId;
         await sourceFolder.save();
 
         return res.json({message: "Folder moved successfully", data: sourceFolder});
@@ -175,4 +206,4 @@ async function moveFolder(req,res) {
     }
 }
 
-module.exports = {createFolder,renameFolder,deleteFolder,moveFolder,getFolders,getFolderById};
+module.exports = {createFolder,renameFolder,deleteFolder,moveFolder,getFolders,getFolderById,restoreFolder};
