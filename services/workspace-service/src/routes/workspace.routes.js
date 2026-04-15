@@ -7,11 +7,12 @@ const {checkWorkspaceExists, requireAdminRole, requireMemberRole} = require('../
 const {authMiddleware} = require('shared');
 
 router.use(authMiddleware);
-router.post('/', validate(create_workspace_valid), createWorkspace);
-router.get('/', getWorkspaces);
-router.get('/:id', checkWorkspaceExists,requireMemberRole,getWorkspaceById);
-router.post('/:id/members', validate(add_member_valid), checkWorkspaceExists, requireAdminRole,addMember);
-router.delete('/:id/members/:targetUserId', checkWorkspaceExists,removeMember);
-router.delete('/:id',checkWorkspaceExists, requireAdminRole,deleteWorkspace);
+
+router.post('/',                                validate(create_workspace_valid), createWorkspace);
+router.get('/',                                 getWorkspaces);
+router.get('/:id',                              checkWorkspaceExists,requireMemberRole,getWorkspaceById);
+router.post('/:id/members',                     validate(add_member_valid), checkWorkspaceExists, requireAdminRole,addMember);
+router.delete('/:id/members/:targetUserId',     checkWorkspaceExists,removeMember);
+router.delete('/:id',                           checkWorkspaceExists, requireAdminRole,deleteWorkspace);
 
 module.exports = router;

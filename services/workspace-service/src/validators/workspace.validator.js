@@ -3,14 +3,14 @@ const Joi = require('joi');
 const create_workspace_valid = Joi.object({
     name: Joi.string().min(2).max(100).required().messages({
         'string.min': "Workspace's name has at least 2 characters",
-        'any.required': "Workspace's name is needed",
+        'any.required': "Workspace's name is required",
     }),
 });
 
 const add_member_valid = Joi.object({
     email: Joi.string().email().required().messages({
         'string.email': "Email not valid",
-        'any.required': "User's email is needed",
+        'any.required': "User's email is required",
     }),
     permissions: Joi.array().items(Joi.string().valid("preview", "download","upload")).default(["preview"]),
 });

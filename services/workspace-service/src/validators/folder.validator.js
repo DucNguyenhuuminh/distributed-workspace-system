@@ -7,7 +7,7 @@ const objectIdSchema = Joi.string().hex().length(24).allow(null, '').default(nul
 
 const create_folder_valid = Joi.object({
     name: Joi.string().min(1).max(100).required().messages({
-        'any.required': "Folder's name is needed",
+        'any.required': "Folder's name is required",
     }),
     parentId: Joi.string().allow(null, '').default(null),
     workspaceId: Joi.string().allow(null,'').default(null),
@@ -15,7 +15,7 @@ const create_folder_valid = Joi.object({
 
 const rename_folder_valid = Joi.object({
     name: Joi.string().min(1).max(100).required().messages({
-        'any.required': "Folder's name is needed",
+        'any.required': "Folder's name is required",
     }),
 });
 
@@ -37,4 +37,4 @@ function validate(schema) {
     };
 }
 
-module.exports = {create_folder_valid, rename_folder_valid, validate};
+module.exports = {create_folder_valid, rename_folder_valid, move_folder_valid, validate};

@@ -80,7 +80,7 @@ async function findByEmail(req,res) {
     try {
         const {email} = req.query;
         if (!email) {
-            return res.status(400).json({message: "Email is needed"});
+            return res.status(400).json({message: "Email is required"});
         }
 
         const user = await User.findOne({email});

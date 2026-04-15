@@ -1,42 +1,14 @@
 const Workspace = require('../models/workspace.model');
 const Folder = require('../models/folder.model');
-const Document = require('../models/document.model');
+const axios = require('axios');
 const {getBreadcrumbPath, getAllDescendantIds, isCircularMove} = require('../utils/folder.util');
-
+const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL || 'http://localhost:3002';
 
 //-------POST /api/folders-----------
 async function createFolder(req,res) {
     try {
         const userId = req.user.userId;
         const {name, parentId, workspaceId} = req.body;
-
-        if (workspaceId) {
-            const ws = req.workspace || await Workspace.findById(workspaceId);
-            if (!ws) {
-                return res.status(404).json({message: "Workspace not found"});
-            }
-            const targetMember = ws.members.find((m) => m.userId.toString() === userId);
-            if (!targetMember) {
-                return res.status(403).json({ message: "You are not a member of this workspace" });
-            }
-            const canUpload = targetMember.role === "ADMIN" || targetMember.permissions.includes("upload");
-            if (!canUpload) {
-                return res.status(403).json({ message: "No 'upload' permission in this workspace" });
-            }
-        }
-
-        if (parentId) {
-            const parentFolder = await Folder.findById(parentId);
-            if (!parentFolder) {
-                return res.status(404).json({ message: "Parent folder not found" });
-            }
-
-            const pWsId = parentFolder.workspaceId ? parentFolder.workspaceId.toString() : null;
-            const reqWsId = workspaceId ? workspaceId.toString() : null;
-            if (pWsId !== reqWsId) {
-                return res.status(400).json({ message: "Workspace ID mismatch with Parent Folder" });
-            }
-        }
 
         const folder = await Folder.create({
             name,
@@ -46,9 +18,9 @@ async function createFolder(req,res) {
             createdBy: userId,
         });
 
-        return res.status(201).json({message: "Create folder successfully", data: folder});
+        return res.status(201).json({message: "Created folder successful", data: folder});
     } catch (err) {
-        return res.status(500).json({message: err.message});
+        return res.status(500).json({messsage: err.messsage});
     }
 }
 
@@ -81,9 +53,10 @@ async function getFolders(req,res) {
 //-------GET /api/folders/:id-----------
 async function getFolderById(req,res) {
     try {
-        const breadcrumb = await getBreadcrumbPath(req.folder._id);
+        const folder = req.folder;
+        const breadcrumb = await getBreadcrumbPath(folder._id);
 
-        return res.json({data: req.folder, breadcrumb: breadcrumb});
+        return res.json({data: folder, breadcrumb: breadcrumb});
     } catch(err) {
         return res.status(500).json({message: err.message});
     }
@@ -93,7 +66,9 @@ async function getFolderById(req,res) {
 async function renameFolder(req,res) {
     try {
         const folder = req.folder;
-        folder.name = req.body.name;
+        const {name} = req.body;
+
+        folder.name = name;
         await folder.save();
         
         return res.json({message: "Rename successfully", data: folder});
@@ -105,16 +80,16 @@ async function renameFolder(req,res) {
 //-------DELETE /api/folders/:id-----------
 async function deleteFolder(req,res) {
     try {
-        const folderId = req.folder._id.toString();
+        const folderId = req.params.id;
         const childFolderIds = await getAllDescendantIds(folderId);
         const allFolderIds = [folderId, ...childFolderIds];
 
+        await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders/${folderId}`,
+            {data: {folderIds: allFolderIds},
+            headers: {Authorization: req.headers.authorization}}
+        );
         await Folder.updateMany(
             {_id: {$in: allFolderIds}},
-            {deletedAt: new Date()}
-        );
-        await Document.updateMany(
-            {folderId: {$in: allFolderIds}},
             {deletedAt: new Date()}
         );
 
@@ -124,79 +99,125 @@ async function deleteFolder(req,res) {
     }
 }
 
+//-------PUT /api/folders/:id/restore-----------
+async function restoreFolder(req,res) {
+    try {
+        const folder = req.folder;
+
+        if (!folder.deletedAt) {
+            return res.status(400).json({message: "Folder not in the trash"});
+        }
+
+        const now = new Date();
+        const deletedTime = new Date(folder.deletedAt);
+        const diffInMilliseconds = now.getTime() - deletedTime.getTime();
+        const diffInDays = diffInMilliseconds/(1000*60*60*24);
+
+        if (diffInDays > 10) {
+            return res.status(400).json({message: "Can not restore. File already in trash over 10 days"})
+        }
+
+        const childFolderIds = await getAllDescendantIds(req.folder._id);
+        const allFoldersIds = [folderId, ...childFolderIds];
+
+        try {
+            await axios.put(`${FILE_SERVICE_URL}/api/files/internal/by-folder/restore`,
+                {folderIds: allFoldersIds},
+                {headers: {Authorization: req.headers.authorization}}
+            );
+        } catch(err) {
+            console.error("[workspace-service] Error while call File Service restore file:", err.message);
+            return res.status(500).json({message: "Error system when restore all sub folders"});
+        }
+
+        await Folder.updateMany(
+            {_id: {$in: allFoldersIds}},
+            {deletedAt: null}
+        );
+        return res.json({message: "Restore folder successfully", data: folder});
+    } catch(err) {
+        return res.status(500).json({message: err.message});
+    }
+}
+
 //-------PUT /api/folders/:id/move-----------
-async function moveFolder(req, res) {
+async function moveFolder(req,res) {
     try {
         const userId = req.user.userId;
         const sourceFolder = req.folder;
-        const { newParentId, targetWorkspaceId } = req.body;
+        const {newParentId, targetWorkspaceId} = req.body;
 
         if (newParentId && sourceFolder._id.toString() === newParentId) {
-            return res.status(400).json({ message: "Cannot move folder into itself" });
+            return res.status(400).json({message: "Cannot move folder into itself"});
         }
 
         let finalWorkspaceId = null;
         let finalOwnerId = userId;
-        let workspaceIdToVerify = null;
 
         if (newParentId) {
-            //Move to other folder
             const targetFolder = await Folder.findById(newParentId);
             if (!targetFolder) {
-                return res.status(404).json({ message: "Target parent folder not found" });
+                return res.status(404).json({message: "Target parent folder not found"});
             }
 
             finalWorkspaceId = targetFolder.workspaceId;
-            finalOwnerId = finalWorkspaceId ? null : userId;
+            finalOwnerId = targetFolder.workspaceId ? null : userId;
 
-            if (!finalWorkspaceId) {
+            if (!targetFolder.workspaceId) {
                 if (targetFolder.createdBy.toString() !== userId) {
-                    return res.status(403).json({ message: "No permission to move to the target folder" });
+                    return res.status(403).json({message: "No permission to move to the target folder"});
                 }
-            } else {
-                workspaceIdToVerify = finalWorkspaceId;
+            }else {
+                const Ws = await Workspace.findById(targetFolder.workspaceId);
+                if (!Ws) {
+                    return res.status(404).json({message: "Target workspace not found"});
+                }
+                const targetMember = Ws.members.find((m) => m.userId.toString() === userId);
+                if (!targetMember) {
+                    return res.status(403).json({message: "No permission to move to the target workspace"});
+                }
+                const canUpload = targetMember.role === "ADMIN" || targetMember.permissions.includes("upload");
+                if (!canUpload) { 
+                    return res.status(403).json({message: "No permission to move to the target workspace"});
+                }
             }
+        }else {
+            if (targetWorkspaceId) {
+                const Ws = await Workspace.findById(targetWorkspaceId);
+                if (!Ws) {
+                    return res.status(404).json({message: "Target workspace not found"});
+                }
+                const targetMember = Ws.members.find((m) => m.userId.toString() === userId);
+                if (!targetMember) {
+                    return res.status(403).json({message: "ou are not a member of the target workspace"});
+                }
+                const canUpload = targetMember.role === "ADMIN" || targetMember.permissions.includes("upload");
+                if (!canUpload) {
+                    return res.status(403).json({message: "No 'upload' permission"});
+                }
 
-        } else if (targetWorkspaceId) {
-            //Move to root workspace
-            finalWorkspaceId = targetWorkspaceId;
-            finalOwnerId = null;
-            workspaceIdToVerify = targetWorkspaceId;
-
-        } else {
-            //Move to child to root in owner Drive
-            if (sourceFolder.ownerId && sourceFolder.ownerId.toString() !== userId) {
-                return res.status(403).json({ message: "Cannot move another user's folder to your My Drive root" });
+                finalWorkspaceId = targetWorkspaceId;
+                finalOwnerId = null;
+            }else {
+                finalWorkspaceId = null;
+                finalOwnerId = userId;
             }
-            finalWorkspaceId = null;
-            finalOwnerId = userId;
         }
 
-        if (workspaceIdToVerify) {
-            const ws = await Workspace.findById(workspaceIdToVerify);
-            if (!ws) return res.status(404).json({ message: "Target workspace not found" });
-
-            const targetMember = ws.members.find((m) => m.userId.toString() === userId);
-            if (!targetMember) return res.status(403).json({ message: "You are not a member of the target workspace" });
-
-            const canUpload = targetMember.role === "ADMIN" || targetMember.permissions.includes("upload");
-            if (!canUpload) return res.status(403).json({ message: "No 'upload' permission for target workspace" });
-        }
-
-        const isCircular = await isCircularMove(sourceFolder._id, newParentId);
+        isCircular = await isCircularMove(sourceFolder._id, newParentId);
         if (isCircular) {
-            return res.status(400).json({ message: "Cannot move a folder into its subfolder" });
+            return res.status(400).json({message: "Cannot move a folder into its subfolder"});
         }
         
         sourceFolder.parentId = newParentId || null;
         sourceFolder.workspaceId = finalWorkspaceId;
-        sourceFolder.ownerId = finalOwnerId;
+        sourceFolder.createdBy = finalOwnerId;
         await sourceFolder.save();
 
-        return res.json({ message: "Folder moved successfully", data: sourceFolder });
-    } catch (err) {
-        return res.status(500).json({ message: err.message });
+        return res.json({message: "Folder moved successfully", data: sourceFolder});
+    } catch(err) {
+        return res.status(500).json({message: err.message});
     }
 }
 
-module.exports = {createFolder,renameFolder,deleteFolder,moveFolder,getFolders,getFolderById};
+module.exports = {createFolder,renameFolder,deleteFolder,moveFolder,getFolders,getFolderById,restoreFolder};

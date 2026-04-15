@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
+const { Schema } = mongoose;
 
-const documentSchema = new mongoose.Schema({
+const documentSchema = new Schema({
     originalName:{
         type: String,
         required: true,
@@ -16,6 +17,7 @@ const documentSchema = new mongoose.Schema({
     },
     physicalFileId:{
         type: mongoose.Schema.Types.ObjectId,
+        ref: 'PhysicalFiles',
         required: true,
     },
     uploadedBy:{
@@ -23,10 +25,24 @@ const documentSchema = new mongoose.Schema({
         required: true,
     },
     processedStatus:{
-        type: String,
-        enum: ["PENDING","PROCESSING","DONE","FAILED"],
+        type:String,
+        enum: ["PENDING", "PROCESSING", "DONE", "FAILED"],
         default: "PENDING",
+    },
+    isDuplicate:{
+        type: Boolean,
+        default: false,
+    },
+    deletedAt:{
+        type: Date,
+        default: null
     },
 },{timestamps: true});
 
-module.exports = mongoose.model("Documents", documentSchema);
+documentSchema.pre(/^find/,function() {
+    if (!this.getOptions()._rescued) {
+        this.where({deletedAt: null});
+    }
+});
+
+module.exports = mongoose.model("Documents",documentSchema);
