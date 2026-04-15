@@ -7,6 +7,7 @@ const {checkWorkspaceExists, requireAdminRole, requireMemberRole} = require('../
 const {authMiddleware} = require('shared');
 
 router.use(authMiddleware);
+
 router.post('/',                                validate(create_workspace_valid), createWorkspace);
 router.get('/',                                 getWorkspaces);
 router.get('/:id',                              checkWorkspaceExists,requireMemberRole,getWorkspaceById);

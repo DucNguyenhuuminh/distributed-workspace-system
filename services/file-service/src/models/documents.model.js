@@ -29,6 +29,10 @@ const documentSchema = new Schema({
         enum: ["PENDING", "PROCESSING", "DONE", "FAILED"],
         default: "PENDING",
     },
+    isDuplicate:{
+        type: Boolean,
+        default: false,
+    },
     deletedAt:{
         type: Date,
         default: null
@@ -36,7 +40,7 @@ const documentSchema = new Schema({
 },{timestamps: true});
 
 documentSchema.pre(/^find/,function() {
-    if (!this.getOptions()._rescured) {
+    if (!this.getOptions()._rescued) {
         this.where({deletedAt: null});
     }
 });

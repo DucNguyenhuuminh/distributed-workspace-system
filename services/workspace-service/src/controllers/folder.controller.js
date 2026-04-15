@@ -114,12 +114,26 @@ async function restoreFolder(req,res) {
         const diffInDays = diffInMilliseconds/(1000*60*60*24);
 
         if (diffInDays > 10) {
-            return res.status(400).json({message:   "Can not restore. File already in trash over 10 days"})
+            return res.status(400).json({message: "Can not restore. File already in trash over 10 days"})
         }
 
-        folder.deletedAt = null;
-        await folder.save();
+        const childFolderIds = await getAllDescendantIds(req.folder._id);
+        const allFoldersIds = [folderId, ...childFolderIds];
 
+        try {
+            await axios.put(`${FILE_SERVICE_URL}/api/files/internal/by-folder/restore`,
+                {folderIds: allFoldersIds},
+                {headers: {Authorization: req.headers.authorization}}
+            );
+        } catch(err) {
+            console.error("[workspace-service] Error while call File Service restore file:", err.message);
+            return res.status(500).json({message: "Error system when restore all sub folders"});
+        }
+
+        await Folder.updateMany(
+            {_id: {$in: allFoldersIds}},
+            {deletedAt: null}
+        );
         return res.json({message: "Restore folder successfully", data: folder});
     } catch(err) {
         return res.status(500).json({message: err.message});

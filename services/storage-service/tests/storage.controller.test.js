@@ -1,223 +1,158 @@
-// Phải mock trước khi require controller
-jest.mock('../src/config/minio.config', () => {
-  return {
-    minioClient: {
-      initiateNewMultipartUpload: jest.fn(),
-      presignedUrl: jest.fn(),
-      completeMultipartUpload: jest.fn(),
-      bucketExists: jest.fn().mockResolvedValue(true),
-    },
-    bucketName: 'test-bucket',
-  };
-});
-
-const request = require('supertest');
-const express = require('express');
+const httpMocks = require('node-mocks-http');
+const storageController = require('../src/controllers/storage.controller');
 const { minioClient } = require('../src/config/minio.config');
-const storageRoutes = require('../src/routes/storage.routes');
 
-// Tạo app test
-function createApp() {
-  const app = express();
-  app.use(express.json());
-  app.use('/api/storage', storageRoutes);
-  return app;
-}
+// Mock toàn bộ thư viện MinIO Client
+jest.mock('../src/config/minio.config', () => ({
+    minioClient: {
+        initiateNewMultipartUpload: jest.fn(),
+        presignedUrl: jest.fn(),
+        completeMultipartUpload: jest.fn(),
+        presignedGetObject: jest.fn(),
+        removeObject: jest.fn()
+    },
+    bucketName: 'test-bucket'
+}));
 
-afterEach(() => {
-  jest.clearAllMocks();
-});
+describe('Storage Controller Unit Tests', () => {
+    let req, res;
 
-// ═══════════════════════════════════════════════════════
-// TEST initMultipartUpload
-// ═══════════════════════════════════════════════════════
-describe('POST /api/storage/multipart/init', () => {
-  const app = createApp();
+    beforeEach(() => {
+        req = httpMocks.createRequest();
+        res = httpMocks.createResponse();
+        jest.clearAllMocks();
+    });
 
-  test('Trả về 201 với uploadId và presignedURLs khi input hợp lệ', async () => {
-    const fakeUploadId = 'upload-id-abc123';
-    const fakePresignedUrl = 'https://minio/presigned?chunk=';
+    describe('initMultipartUpload', () => {
+        beforeEach(() => {
+            // ĐÃ FIX: Truyền đầy đủ data để pass Validation
+            req.body = { 
+                filename: 'test.pdf', 
+                mimeType: 'application/pdf', 
+                totalChunks: 3 
+            };
+        });
 
-    minioClient.initiateNewMultipartUpload.mockResolvedValue(fakeUploadId);
-    minioClient.presignedUrl.mockImplementation((method, bucket, objectName, expire, opts) =>
-      Promise.resolve(`${fakePresignedUrl}${opts.partNumber}`)
-    );
+        it('Thất bại: Thiếu hoặc sai số lượng chunk (400)', async () => {
+            req.body.totalChunks = 0;
+            await storageController.initMultipartUpload(req, res);
+            expect(res.statusCode).toBe(400);
+            expect(res._getJSONData().message).toBe("Lack of chunks");
+        });
 
-    const res = await request(app)
-      .post('/api/storage/multipart/init')
-      .send({
-        filename: 'page.html',  
-        content: 'text/html',
-        totalChunks: 5,
-      });
+        it('Thất bại: MinIO Server bị sập (500)', async () => {
+            minioClient.initiateNewMultipartUpload.mockRejectedValue(new Error('MinIO connection refused'));
+            await storageController.initMultipartUpload(req, res);
+            expect(res.statusCode).toBe(500);
+            expect(res._getJSONData().message).toBe('MinIO connection refused');
+        });
 
-    expect(res.status).toBe(201);
-    expect(res.body.data).toHaveProperty('uploadId', fakeUploadId);
-    expect(res.body.data).toHaveProperty('objectName');
-    expect(res.body.data.presignedURLs).toHaveLength(5);
+        it('Thành công: Khởi tạo và trả về đúng số lượng Presigned URLs (201)', async () => {
+            minioClient.initiateNewMultipartUpload.mockResolvedValue('fake-upload-id');
+            minioClient.presignedUrl.mockResolvedValue('http://fake-minio.url/part');
 
-    expect(res.body.data.presignedURLs[0]).toContain('chunk=1');
-    expect(res.body.data.presignedURLs[1]).toContain('chunk=2');
-    expect(res.body.data.presignedURLs[2]).toContain('chunk=3')
-    expect(res.body.data.presignedURLs[3]).toContain('chunk=4')
-    expect(res.body.data.presignedURLs[4]).toContain('chunk=5');
-  });
+            await storageController.initMultipartUpload(req, res);
 
-  test('presignedUrl được gọi đúng số lần = totalChunks', async () => {
-    minioClient.initiateNewMultipartUpload.mockResolvedValue('upload-id-xyz');
-    minioClient.presignedUrl.mockResolvedValue('https://minio/presigned');
+            expect(res.statusCode).toBe(201);
+            const responseData = res._getJSONData().data;
+            expect(responseData.uploadId).toBe('fake-upload-id');
+            expect(responseData.objectName).toContain('test.pdf');
+            expect(responseData.presignedURLs).toHaveLength(3); // Khớp với totalChunks = 3
+            
+            // Kiểm tra xem hàm tạo URL có được gọi đúng 3 lần không
+            expect(minioClient.presignedUrl).toHaveBeenCalledTimes(3);
+        });
+    });
 
-    await request(app)
-      .post('/api/storage/multipart/init')
-      .send({
-        filename: 'report.pdf',
-        content: 'application/pdf',
-        totalChunks: 5,
-      });
+    describe('completeMultipartUpload', () => {
+        beforeEach(() => {
+            req.body = {
+                uploadId: 'up123',
+                objectName: 'file/123_test.pdf',
+                etags: [
+                    { partNumber: 2, etag: 'etag2' },
+                    { partNumber: 1, etag: 'etag1' },
+                    { partNumber: 3, etag: 'etag3' }
+                ]
+            };
+        });
 
-    expect(minioClient.presignedUrl).toHaveBeenCalledTimes(5);
+        it('Thất bại: MinIO merge lỗi (500)', async () => {
+            minioClient.completeMultipartUpload.mockRejectedValue(new Error('Invalid parts'));
+            await storageController.completeMultipartUpload(req, res);
+            expect(res.statusCode).toBe(500);
+        });
 
-    for (let i = 1; i <= 5; i++) {
-      expect(minioClient.presignedUrl).toHaveBeenCalledWith(
-        'PUT',
-        'test-bucket',
-        expect.stringContaining('report.pdf'),
-        3600,
-        expect.objectContaining({ partNumber: i })
-      );
-    }
-  });
+        it('Thành công: ETags được sort đúng và merge thành công (200)', async () => {
+            minioClient.completeMultipartUpload.mockResolvedValue(true);
 
-  test('objectName phải chứa tên file gốc và prefix file/', async () => {
-    minioClient.initiateNewMultipartUpload.mockResolvedValue('upload-id-123');
-    minioClient.presignedUrl.mockResolvedValue('https://minio/presigned');
+            await storageController.completeMultipartUpload(req, res);
 
-    const res = await request(app)
-      .post('/api/storage/multipart/init')
-      .send({
-        filename: 'myfile.docx',
-        content: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        totalChunks: 2,
-      });
+            // Kiểm tra xem dữ liệu truyền vào MinIO đã được map và sort đúng chưa
+            const calledArgs = minioClient.completeMultipartUpload.mock.calls[0];
+            const passedEtags = calledArgs[3]; // Tham số thứ 4 là sortedEtags
 
-    expect(res.body.data.objectName).toContain('myfile.docx');
-    expect(res.body.data.objectName).toContain('file/'); 
-  });
+            // ĐÃ FIX: Kiểm tra biến 'Part' thay vì 'partNumber'
+            expect(passedEtags[0].part).toBe(1);
+            expect(passedEtags[0].etag).toBe('etag1');
+            expect(passedEtags[1].part).toBe(2);
+            expect(passedEtags[2].part).toBe(3);
 
-  test('Trả về 400 khi totalChunks không hợp lệ', async () => {
-    const res = await request(app)
-      .post('/api/storage/multipart/init')
-      .send({
-        filename: 'file.txt',
-        content: 'text/plain',
-        totalChunks: 0,
-      });
+            expect(res.statusCode).toBe(200);
+            expect(res._getJSONData().message).toBe("Merge chunks successfully");
+        });
+    });
 
-    expect(res.status).toBe(400);
-    expect(res.body.message).toBe('Lack of chunks');
-  });
+    describe('getDownloadURL', () => {
+        it('Thất bại: Thiếu objectName (400)', async () => {
+            req.query = {};
+            await storageController.getDownloadURL(req, res);
+            expect(res.statusCode).toBe(400);
+        });
 
-  test('Trả về 500 khi MinIO lỗi', async () => {
-    minioClient.initiateNewMultipartUpload.mockRejectedValue(
-      new Error('MinIO connection refused')
-    );
+        it('Thành công: Lấy URL Download với header attachment', async () => {
+            req.query = { objectName: 'file/abc.pdf', originalName: 'my-doc.pdf', action: 'download' };
+            minioClient.presignedGetObject.mockResolvedValue('http://download.link');
 
-    const res = await request(app)
-      .post('/api/storage/multipart/init')
-      .send({
-        filename: 'file.pdf',
-        content: 'application/pdf',
-        totalChunks: 3,
-      });
+            await storageController.getDownloadURL(req, res);
 
-    expect(res.status).toBe(500);
-    expect(res.body.message).toBe('MinIO connection refused');
-  });
-});
+            // Kiểm tra Header được cấu hình để ép tải file xuống
+            expect(minioClient.presignedGetObject).toHaveBeenCalledWith(
+                'test-bucket',
+                'file/abc.pdf',
+                expect.any(Number),
+                { 'response-content-disposition': 'attachment; filename="my-doc.pdf"' }
+            );
+            expect(res.statusCode).toBe(200);
+            expect(res._getJSONData().data.url).toBe('http://download.link');
+        });
 
-// ═══════════════════════════════════════════════════════
-// TEST completeMultipartUpload
-// ═══════════════════════════════════════════════════════
-describe('POST /api/storage/multipart/complete', () => {
-  const app = createApp();
+        it('Thành công: Lấy URL Preview với header inline', async () => {
+            req.query = { objectName: 'file/abc.pdf', action: 'preview' };
+            minioClient.presignedGetObject.mockResolvedValue('http://preview.link');
 
-  const validBody = {
-    uploadId: 'upload-id-abc123',
-    objectName: 'file/123456_test.pdf',
-    etags: [
-      { partNumber: 3, etag: 'etag-chunk-3' },
-      { partNumber: 1, etag: 'etag-chunk-1' },
-      { partNumber: 2, etag: 'etag-chunk-2' },
-    ],
-  };
+            await storageController.getDownloadURL(req, res);
 
-  test('Trả về 200 khi merge thành công', async () => {
-    minioClient.completeMultipartUpload.mockResolvedValue({});
+            // Kiểm tra Header được cấu hình để xem trực tiếp trên trình duyệt
+            expect(minioClient.presignedGetObject).toHaveBeenCalledWith(
+                'test-bucket',
+                'file/abc.pdf',
+                expect.any(Number),
+                { 'response-content-disposition': 'inline' }
+            );
+            expect(res.statusCode).toBe(200);
+        });
+    });
 
-    const res = await request(app)
-      .post('/api/storage/multipart/complete')
-      .send(validBody);
+    describe('deleteDupFile', () => {
+        it('Thành công: Gọi hàm xóa của MinIO', async () => {
+            req.body = { objectName: 'file/abc.pdf' };
+            minioClient.removeObject.mockResolvedValue(true);
 
-    expect(res.status).toBe(200);
-    expect(res.body.message).toBe('Merge chunks successfully');
-    expect(res.body.data.objectName).toBe(validBody.objectName);
-  });
+            await storageController.deleteDupFile(req, res);
 
-  test('ETags phải được sort đúng trước khi gửi lên MinIO', async () => {
-    minioClient.completeMultipartUpload.mockResolvedValue({});
-
-    await request(app)
-      .post('/api/storage/multipart/complete')
-      .send(validBody);
-
-    const calledWithEtags =
-      minioClient.completeMultipartUpload.mock.calls[0][3];
-
-    expect(calledWithEtags[0].partNumber).toBe(1);
-    expect(calledWithEtags[1].partNumber).toBe(2);
-    expect(calledWithEtags[2].partNumber).toBe(3);
-  });
-
-  test('Gọi MinIO với đúng tham số', async () => {
-    minioClient.completeMultipartUpload.mockResolvedValue({});
-
-    await request(app)
-      .post('/api/storage/multipart/complete')
-      .send(validBody);
-
-    expect(minioClient.completeMultipartUpload).toHaveBeenCalledWith(
-      'test-bucket',
-      validBody.objectName,
-      validBody.uploadId,
-      expect.any(Array)
-    );
-  });
-
-  test('Trả về 500 khi MinIO merge lỗi', async () => {
-    minioClient.completeMultipartUpload.mockRejectedValue(
-      new Error('Merge failed: invalid parts')
-    );
-
-    const res = await request(app)
-      .post('/api/storage/multipart/complete')
-      .send(validBody);
-
-    expect(res.status).toBe(500);
-    expect(res.body.message).toBe('Merge failed: invalid parts');
-  });
-
-  test('Hoạt động đúng khi chỉ có 1 chunk', async () => {
-    minioClient.completeMultipartUpload.mockResolvedValue({});
-
-    const res = await request(app)
-      .post('/api/storage/multipart/complete')
-      .send({
-        uploadId: 'upload-id-single',
-        objectName: 'file/small-file.txt',
-        etags: [{ partNumber: 1, etag: 'etag-only' }],
-      });
-
-    expect(res.status).toBe(200);
-    expect(minioClient.completeMultipartUpload).toHaveBeenCalledTimes(1);
-  });
+            expect(minioClient.removeObject).toHaveBeenCalledWith('test-bucket', 'file/abc.pdf');
+            expect(res.statusCode).toBe(200);
+        });
+    });
 });

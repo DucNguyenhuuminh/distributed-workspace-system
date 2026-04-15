@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+require('./cleanup.worker');
 
 const app = express();
 app.use(express.json());
@@ -10,11 +11,10 @@ app.get('/health', (_,res) => res.json({status: "OK", service: 'workspace-servic
 app.use((_,res) => res.status(404).json({message: "Route not exist"}));
 
 mongoose.connect(process.env.MONGO_URI).then(() => {
-        console.log('[workspace-service] MongoDB connected');
-        app.listen(process.env.PORT || 3003, () =>
-            console.log(`[workspace-service] Running on port ${process.env.PORT}`)
-        );
-    }).catch((err) => {
-        console.error('[workspace-service] MongoDB error:', err.message);
-        process.exit(1);
-    });
+    console.log('[workspace-service] MongoDB connected');
+    app.listen(process.env.PORT || 3003, () =>
+        console.log(`[workspace-service] Running on port ${process.env.PORT}`));
+}).catch((err) => {
+    console.error('[workspace-service] MongoDB error:', err.message);
+    process.exit(1);
+});

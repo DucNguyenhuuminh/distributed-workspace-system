@@ -3,7 +3,7 @@ const {minioClient, bucketName} = require('../config/minio.config');
 //-------POST /api/storage/multipart/init-----------
 async function initMultipartUpload(req,res) {
     try {
-        const {filename, content, totalChunks} = req.body;
+        const {filename, mimeType, totalChunks} = req.body;
 
         if(!totalChunks || totalChunks <= 0) {
             return res.status(400).json({message: "Lack of chunks"});
@@ -14,7 +14,7 @@ async function initMultipartUpload(req,res) {
         const uploadId = await minioClient.initiateNewMultipartUpload(
             bucketName,
             objectName,
-            {'Content-Type': content}
+            {'Content-Type': mimeType}
         );
 
         const presignedURLs = await Promise.all(
@@ -36,6 +36,10 @@ async function initMultipartUpload(req,res) {
         return res.status(201).json({message: "Init multipart upload successfully",
             data: {uploadId, objectName, presignedURLs}});
     } catch(err) {
+        console.error("[storage-service] initMultipartUpload error:", err.response?.data || err.message);
+        if (err.response) {
+            return res.status(err.response.status).json(err.response.data);
+        }
         return res.status(500).json({message: err.message});
     }
 }
@@ -47,7 +51,7 @@ async function completeMultipartUpload(req,res) {
         const sortedEtags = [...etags].map(e => ({
             part: e.partNumber,
             etag: e.etag
-        })).sort((a,b) => a.partNumber - b.partNumber);
+        })).sort((a,b) => a.part - b.part);
 
         await minioClient.completeMultipartUpload(
             bucketName,
@@ -58,6 +62,10 @@ async function completeMultipartUpload(req,res) {
 
         return res.json({message: "Merge chunks successfully", data: {objectName}});
     } catch(err) {
+        console.error("[storage-service] completeMultipartUpload error:", err.response?.data || err.message);
+        if (err.response) {
+            return res.status(err.response.status).json(err.response.data);
+        }
         return res.status(500).json({message: err.message});
     }
 }
@@ -65,7 +73,7 @@ async function completeMultipartUpload(req,res) {
 //-------GET /api/storage/file/url-----------
 async function getDownloadURL(req,res) {
     try {
-        const {objectName, originalName, action} = req.body;
+        const {objectName, originalName, action} = req.query;
 
         if (!objectName) {
             return res.status(400).json({message: "Object name is required"});
@@ -73,7 +81,7 @@ async function getDownloadURL(req,res) {
 
         let resHeaders = {};
         if (action === 'download') {
-            resHeaders = {'response-content-disposition': `attachment; filename="${originalName}"`};
+            resHeaders = {'response-content-disposition': `attachment; filename="${originalName|| 'file'}"`};
         }else {
             resHeaders = {'response-content-disposition': 'inline'};
         }
@@ -86,6 +94,10 @@ async function getDownloadURL(req,res) {
         );
         return res.json({message: "Get download URL successfully", data: {url}});
     } catch(err) {
+        console.error("[storage-service] getDownloadURL error:", err.response?.data || err.message);
+        if (err.response) {
+            return res.status(err.response.status).json(err.response.data);
+        }
         return res.status(500).json({message: err.message});
     }
 }

@@ -1,11 +1,13 @@
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
+require('./cleanup.worker');
 
 const app = express();
 app.use(express.json());
 app.use('/api/files/internal', require('./routes/internal.routes'));
-app.use('/api/files-worker', require('./controllers/file.worker.controller'));
+app.use('/api/files', require('./routes/file.routes'));
+app.use('/api/files-worker', require('./routes/file.worker.routes'))
 app.get('/health', (_,res) => res.json({status: "OK", service: 'file-service'}));
 app.use((_,res) => res.status(404).json({message: "Route not exist"}));
 

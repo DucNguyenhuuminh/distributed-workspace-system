@@ -9,7 +9,7 @@ const fileSchema = new mongoose.Schema({
     },
     minioObjectPath:{
         type: String,
-        require: true,
+        required: true,
     },
     sizeBytes:{
         type: Number,

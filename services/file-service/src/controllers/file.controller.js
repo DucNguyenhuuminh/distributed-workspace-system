@@ -1,7 +1,6 @@
 const axios = require('axios');
 const Document = require('../models/documents.model');
 const PhysicalFile = require('../models/physical-file.model');
-const { json } = require('express');
 const WORKSPACE_SERVICE_URL = process.env.WORKSPACE_SERVICE_URL || 'http://localhost:3003';
 const STORAGE_SERVICE_URL = process.env.STORAGE_SERVICE_URL || 'http://localhost:3005';
 
@@ -9,7 +8,7 @@ const STORAGE_SERVICE_URL = process.env.STORAGE_SERVICE_URL || 'http://localhost
 async function getFiles(req,res) {
     try {
         const userId = req.user.userId;
-        const {workspaceId, folderId} = req.body;
+        const {workspaceId, folderId} = req.query;
 
         let query = {};
         if (folderId) {
@@ -24,10 +23,7 @@ async function getFiles(req,res) {
             }
         }
 
-        const files = await Document.find(query).populate({path:'physicalFileId'}, 
-                                                            {path:'sizeBytes'},
-                                                            {path:'mimeType'},
-                                                            {path:'minioObjectPath'})
+        const files = await Document.find(query).populate('physicalFileId','sizeBytes mimeType minioObjectPath')
                                                             .sort({createdAt:-1});
         return res.json({data: files});
     } catch(err) {
@@ -50,7 +46,7 @@ async function getFileById(req,res) {
         if (!isOwner && !file.workspaceId) {
             return res.status(403).json({message: "You not have permission to access this file"});
         }
-        return res.json({data: req.file});
+        return res.json({data: file});
     } catch(err) {
         return res.status(500).json({message: err.message});
     }
@@ -97,6 +93,93 @@ async function renameFile(req,res) {
 }
 
 //-------DELETE /api/files/:id-----------
+async function deleteFile(req,res) {
+    try {
+        const userId = req.user.userId;
+        const fileId = req.params.id;
+
+        const file = await Document.findById(fileId);
+        if (!file) {
+            return res.status(404).json({message: "File not exists"});
+        }
+
+        if (!file.workspaceId) {
+            if (file.uploadedBy.toString() !== userId) {
+                return res.status(403).json({message: "You not have permission to access this file"});
+            }
+        }else {
+            try {
+                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
+                    {headers: {Authorization: req.headers.authorization}});
+                const workspace = response.data.data;
+                const member = workspace.members.find((m) => m.userId.toString() === userId);
+                if (!member || member.role !== "ADMIN") {
+                    return res.status(403).json({message: "You not have permission in this workspace"});
+                }
+            } catch(err) {
+                return res.status(500).json({message: "Cannot connect to workspace-service"});
+            }
+        }
+        
+        await Document.updateOne(
+            {_id: fileId},
+            {deletedAt: new Date()}
+        );
+
+        return res.json({message: "File deleted successfully", data: {file}});
+    } catch(err) {
+        return res.status(500).json({message: err.message}); 
+    }
+}
+
+//-------PUT /api/files/:id/restore-----------
+async function restoreFile(req,res) {
+    try {
+        const userId = req.user.userId;
+        const fileId = req.params.id;
+
+        const file = await Document.findOne({_id: fileId});
+        if (!file) {
+            return res.status(404).json({ message: "File not exists" });
+        }
+        if (!file.deletedAt) {
+            return res.status(400).json({ message: "File not in the trash" });
+        }
+
+        const now = new Date();
+        const deletedTime = new Date(file.deletedAt);
+        const diffInMilliseconds = now.getTime() - deletedTime.getTime();
+        const diffInDays = diffInMilliseconds / (1000 * 60 * 60 * 24);
+
+        if (diffInDays > 10) {
+            return res.status(400).json({message: "Can not restore. File already in trash over 10 days"});
+        }
+
+        if (!file.workspaceId) {
+            if (file.uploadedBy.toString() !== userId) {
+                return res.status(403).json({message: "You not have permission to access this file"});
+            }
+        }else {
+            try {
+                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
+                    {headers: {Authorization: req.headers.authorization}});
+                const workspace = response.data.data;
+                const member = workspace.members.find((m) => m.userId.toString() === userId);
+                if (!member || member.role !== "ADMIN") {
+                    return res.status(403).json({message: "Only Workspace's Admin can move this file"});
+                }
+            } catch(err) {
+                return res.status(500).json({message: "Cannot connect to workspace-service"});
+            }
+        }
+
+        file.deletedAt = null;
+        await file.save();
+        return res.json({ message: "Restore file successfully", data: file });
+    } catch(err) {
+        return res.status(500).json({ message: err.message });
+    }
+}
 
 //-------GET /api/files/:id/link-----------
 async function getFileLink(req,res) {
@@ -116,11 +199,12 @@ async function getFileLink(req,res) {
             }
         }else {
             try {
-                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspace/${workspaceId}`,
+                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}});
                 const workspace = response.data.data;
                 const member = workspace.members.find((m) => m.userId.toString() === userId);
-                if (!member || member.permissions.includes('download', 'preview')) {
+                const isPermissions = action === 'download' ? 'download': 'preview';
+                if (!member || !member.permissions || !member.permissions.includes(isPermissions)) {
                     return res.status(403).json({message: "You not have permission in this workspace"});
                 }
             } catch(err) {
@@ -154,4 +238,48 @@ async function getFileLink(req,res) {
         return res.status(500).json({message: "Error system while handle link"});
     }
 }
-//-------PUT /api/files/:id/move/:targetFileId-----------
+
+//-------PUT /api/files/:id/move/:targetFolderId-----------
+async function moveFile(req,res) {
+    try {
+        const userId = req.user.userId;
+        const fileId = req.params.id;
+        const targetFolderId = req.params.targetFolderId;
+
+        const file = await Document.findById(fileId);
+        if (!file) {
+            return res.status(404).json({message: "File not exists"});
+        }
+
+        if (!file.workspaceId) {
+            if (file.uploadedBy.toString() !== userId) {
+                return res.status(403).json({message: "You not have permission to access this file"});
+            }
+        }else {
+            try {
+                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
+                    {headers: {Authorization: req.headers.authorization}});
+                const workspace = response.data.data;
+                const member = workspace.members.find((m) => m.userId.toString() === userId);
+                if (!member || member.role !== "ADMIN") {
+                    return res.status(403).json({message: "Only Workspace's Admin can move this file"});
+                }
+            } catch(err) {
+                return res.status(500).json({message: "Cannot connect to workspace-service"});
+            }
+        }
+
+        if (targetFolderId === null) {
+            file.folderId = null;
+        }else {
+            file.folderId = targetFolderId;
+        }
+        await file.save();
+
+        return res.json({message: "Move file successfully", data: {file}});
+    } catch(err) {
+        return res.status(500).json({message: err.message});  
+    }
+}
+
+module.exports = {getFiles,getFileById,getFileLink,renameFile,deleteFile,restoreFile,moveFile};
