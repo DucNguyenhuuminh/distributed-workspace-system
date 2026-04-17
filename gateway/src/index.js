@@ -17,10 +17,10 @@ app.use(morgan((tokens, req, res) => {
         '\x1b[36m[GATEWAY]\x1b[0m',
         tokens.method(req, res),
         tokens.url(req, res),
-        '| Status:', tokens.status(req, res),
-        '| Size:', tokens.res(req, res, 'content-length') || '-', 'bytes',
-        '| Time:', tokens['response-time'](req, res), 'ms',
-        '| IP:', tokens['remote-addr'](req, res)
+        '|Status:', tokens.status(req, res),
+        '|Size:', tokens.res(req, res, 'content-length') || '-', 'bytes',
+        '|Time:', tokens['response-time'](req, res), 'ms',
+        '|IP:', tokens['remote-addr'](req, res)
     ].join(' ');
 }));
 
@@ -32,14 +32,32 @@ const services = {
     storageService: 'http://127.0.0.1:3005'
 };
 
+app.use('*/internal/*', (req, res) => {
+    console.warn(`[SECURITY WARNING] Blocked external access to internal route: ${req.originalUrl}`);
+    res.status(403).json({ message: "API Gateway: Forbidden access to internal routes" });
+});
+
 app.use(createProxyMiddleware({
-    pathFilter: '/api/auth',
+    pathFilter: ['/api/auth'],
     target: services.authService,
     changeOrigin: true
 }));
-app.use('api/workspaces', createProxyMiddleware({
-    pathFilter: ['/api/workspaces','/api/folders'],
+
+app.use(createProxyMiddleware({
+    pathFilter: ['/api/workspaces', '/api/folders'],
     target: services.workspaceService,
+    changeOrigin: true
+}));
+
+app.use(createProxyMiddleware({
+    pathFilter: ['/api/storage'],
+    target: services.storageService,
+    changeOrigin: true
+}));
+
+app.use(createProxyMiddleware({
+    pathFilter: ['/api/files', '/api/files-worker'],
+    target: services.fileService,
     changeOrigin: true
 }));
 
@@ -50,6 +68,8 @@ app.use('*',(req,res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`API Gateway is running at http://127.0.0.1: ${PORT}`);
-    console.log(`Direct Auth -> ${services.authService}`);
-    console.log(`Direct Workpace -> ${services.workspaceService}`);
+    console.log(`Direct Auth        -> ${services.authService}`);
+    console.log(`Direct Workpace    -> ${services.workspaceService}`);
+    console.log(`Direct Storage     -> ${services.storageService}`);
+    console.log(`Direct File        -> ${services.fileService}`);
 });

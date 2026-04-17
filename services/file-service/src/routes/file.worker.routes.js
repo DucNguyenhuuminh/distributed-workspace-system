@@ -1,8 +1,16 @@
 const router = require('express').Router();
 const {checkHash, initUpload, mergeUpload} = require('../controllers/file.worker.controller');
+const {
+    checkHashValidator,
+    initUploadValidator,
+    mergeUploadValidator
+} = require('../validators/file.worker.validator');
+const {verifyToken, validateRequest} = require('shared');
 
-router.post('/hash', checkHash);
-router.post('/init', initUpload);
-router.post('/merge', mergeUpload);
+router.use(verifyToken);
+
+router.post('/hash', checkHashValidator, validateRequest, checkHash);
+router.post('/init', initUploadValidator, validateRequest, initUpload);
+router.post('/merge', mergeUploadValidator, validateRequest, mergeUpload);
 
 module.exports = router;

@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const{initMultipartUpload,completeMultipartUpload,getDownloadURL,deleteDupFile} = require('../controllers/storage.controller');
-const{init_multipart_valid,complete_multipart_valid,get_downloadURL_valid, delete_file_valid,validateRequest} = require('../validators/storage.validator');
+const{init_multipart_valid,complete_multipart_valid,get_downloadURL_valid, delete_file_valid} = require('../validators/storage.validator');
+const {validateRequest} = require('shared');
 
 router.post('/multipart/init',      init_multipart_valid, validateRequest, initMultipartUpload);
 router.post('/multipart/complete',  complete_multipart_valid, validateRequest, completeMultipartUpload);

@@ -269,7 +269,7 @@ async function moveFile(req,res) {
             }
         }
 
-        if (targetFolderId === null) {
+        if (targetFolderId === null || targetFolderId === "null") {
             file.folderId = null;
         }else {
             file.folderId = targetFolderId;

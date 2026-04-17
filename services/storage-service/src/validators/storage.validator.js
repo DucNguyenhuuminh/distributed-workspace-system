@@ -1,4 +1,4 @@
-const {body, query, validationResult} = require('express-validator');
+const {body, query} = require('express-validator');
 
 const init_multipart_valid = [body('filename').notEmpty().withMessage("Filename is required")
                                             .isString().withMessage("Filename must be string").trim(),
@@ -29,18 +29,4 @@ const delete_file_valid = [body('objectName').notEmpty().withMessage('Object nam
                                             .isString().withMessage('Object name must be a string')
 ];
 
-function validateRequest(req, res, next) {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        const extractedErrors = [];
-        errors.array().map(err => extractedErrors.push({ [err.path]: err.msg }));
-
-        return res.status(400).json({
-            message: "Validation failed",
-            errors: extractedErrors,
-        });
-    }
-    next();
-}
-
-module.exports = {init_multipart_valid, complete_multipart_valid, get_downloadURL_valid, delete_file_valid, validateRequest};
+module.exports = {init_multipart_valid, complete_multipart_valid, get_downloadURL_valid, delete_file_valid};
