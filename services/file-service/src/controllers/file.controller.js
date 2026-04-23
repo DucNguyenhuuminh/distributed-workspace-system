@@ -1,4 +1,5 @@
 const axios = require('axios');
+const mongoose = require('mongoose');
 const Document = require('../models/documents.model');
 const PhysicalFile = require('../models/physical-file.model');
 const WORKSPACE_SERVICE_URL = process.env.WORKSPACE_SERVICE_URL || 'http://localhost:3003';
@@ -138,7 +139,7 @@ async function restoreFile(req,res) {
         const userId = req.user.userId;
         const fileId = req.params.id;
 
-        const file = await Document.findOne({_id: fileId});
+        const file = await Document.collection.findOne({ _id: new mongoose.Types.ObjectId(fileId) });
         if (!file) {
             return res.status(404).json({ message: "File not exists" });
         }
@@ -173,8 +174,12 @@ async function restoreFile(req,res) {
             }
         }
 
+        await Document.updateOne(
+            { _id: new mongoose.Types.ObjectId(fileId) },
+            { $set: { deletedAt: null } }
+        );
+
         file.deletedAt = null;
-        await file.save();
         return res.json({ message: "Restore file successfully", data: file });
     } catch(err) {
         return res.status(500).json({ message: err.message });

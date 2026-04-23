@@ -16,51 +16,28 @@ services:
         limits:
           memory: 256m
 
-  # redis:
-  #   image: redis:7-alpine
-  #   container_name: workspace-redis
-  #   restart: unless-stopped
-  #   ports:
-  #     - "6379:6379"
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         memory: 128m
-  #   command: >
-  #     redis-server
-  #     --maxmemory 96mb
-  #     --maxmemory-policy allkeys-lru
-  #     --save ""
-
-  kafka:
-    image: confluentinc/cp-kafka:7.6.0
-    container_name: workspace-kafka
+  redis:
+    image: redis:7-alpine
+    container_name: workspace-redis
     restart: unless-stopped
     ports:
-      - "9092:9092"
-    environment:
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@workspace-kafka:9093
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_LOG_DIRS: /var/lib/kafka/data
-      KAFKA_HEAP_OPTS: -Xmx400m -Xms400m
-      KAFKA_LOG_RETENTION_HOURS: 24
-      KAFKA_LOG_RETENTION_BYTES: 268435456
+      - "6379:6379"
     volumes:
-      - kafka_data:/var/lib/kafka/data
+      - redis_data:/data 
+    command: >
+      redis-server
+      --maxmemory 192mb
+      --maxmemory-policy noeviction 
+      --appendonly yes 
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     deploy:
       resources:
         limits:
-          memory: 512m
+          memory: 256m
 
   minio:
     image: minio/minio:latest
@@ -100,5 +77,5 @@ services:
 volumes:
   mongo_data:
   minio_data:
-  kafka_data:
+  redis_data:
   chroma_data:

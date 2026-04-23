@@ -35,11 +35,11 @@ async function checkHash(req,res) {
             }
 
             const newFile = await Document.create({
-                origianlName: filename,
+                originalName: filename,
                 workspaceId: workspaceId || null,
                 folderId: folderId || null,
                 physicalFileId: existingPhysicalFile._id,
-                uploadedBy: userId
+                uploadedBy: userId,
             });
 
             return res.status(200).json({message: "Deduplication successful. File copy instantly", data: {document: newFile, isDuplicate: true}});
@@ -125,12 +125,12 @@ async function mergeUpload(req,res) {
             workspaceId: workspaceId || null,
             folderId: folderId || null,
             physicalFileId: physicalFile._id,
-            uploadedId: userId,
+            uploadedBy: userId,
         });
 
         return res.status(200).json({message: "File merged and saved successful", data: file});
     } catch(err) {
-        return res.json({message: err.message});
+        return res.status(500).json({message: err.message});
     }
 }
 module.exports = {initUpload, checkHash, mergeUpload};

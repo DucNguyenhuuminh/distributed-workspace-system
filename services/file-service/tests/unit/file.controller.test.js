@@ -84,11 +84,20 @@ describe('File Controller Unit Tests', () => {
 
     describe('restoreFile', () => {
         it('Thất bại: Quá hạn 10 ngày (400)', async () => {
-            req.params.id = 'file1';
+            const mongoose = require('mongoose');
+            
+            // 1. Tạo req.params.id hợp lệ
+            req.params.id = new mongoose.Types.ObjectId().toString();
+
             const oldDate = new Date();
             oldDate.setDate(oldDate.getDate() - 11);
 
-            Document.findOne.mockResolvedValue({ deletedAt: oldDate });
+            // 2. Mock 'collection.findOne' thay vì 'findOne'
+            Document.collection = { findOne: jest.fn() };
+            Document.collection.findOne.mockResolvedValue({ 
+                _id: req.params.id,
+                deletedAt: oldDate 
+            });
 
             await fileController.restoreFile(req, res);
             expect(res.statusCode).toBe(400);
@@ -96,11 +105,26 @@ describe('File Controller Unit Tests', () => {
         });
 
         it('Thất bại: Member thường không được restore trong Workspace (403)', async () => {
-            req.params.id = 'file1';
+            const mongoose = require('mongoose');
+
+            // 1. Tạo req.params.id hợp lệ
+            req.params.id = new mongoose.Types.ObjectId().toString();
+            
+            // Phải mock headers để tránh lỗi truy xuất req.headers.authorization
+            req.headers = { authorization: 'Bearer dummyToken' };
+
             const twoDaysAgo = new Date();
             twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
-            Document.findOne.mockResolvedValue({ deletedAt: twoDaysAgo, workspaceId: 'ws1' });
+            // 2. Mock 'collection.findOne' thay vì 'findOne'
+            Document.collection = { findOne: jest.fn() };
+            Document.collection.findOne.mockResolvedValue({ 
+                _id: req.params.id,
+                deletedAt: twoDaysAgo, 
+                workspaceId: 'ws1',
+                uploadedBy: 'someoneElse' // Nếu up bởi req.user thì sẽ không check admin
+            });
+
             // Mock Axios trả về role MEMBER
             axios.get.mockResolvedValue({ 
                 data: { data: { members: [{ userId, role: 'MEMBER' }] } } 
