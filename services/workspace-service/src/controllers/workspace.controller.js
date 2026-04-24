@@ -4,6 +4,8 @@ const Folder = require('../models/folder.model');
 const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL || 'http://localhost:3002';
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:3001';
 
+const{addJob, queueForEvent, jobIdFor,EVENTS,DEFAULT_JOB_OPTIONS} = require('shared');
+
 //-------POST /api/workspaces-----------
 async function createWorkspace(req,res) {
     try {
@@ -19,6 +21,17 @@ async function createWorkspace(req,res) {
                 permissions: ["preview", "download", "upload"],
             }],
         });
+
+        try {
+            await addJob(
+                queueForEvent(EVENTS.WORKSPACE_CREATED),
+                EVENTS.WORKSPACE_CREATED,
+                {workspaceId: workspace._id.toString(), createdBy: userId, workspace: workspace.toObject()},
+                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.WORKSPACE_CREATED, workspace._id.toString())}
+            );
+        } catch (jobErr) {
+            console.error('[Queue Error] Failed to enqueue WORKSPACE_CREATED job', jobErr);
+        }
 
         return res.status(201).json({message: "Create workspace successfully", data: workspace});
     } catch(err) {
@@ -75,6 +88,17 @@ async function addMember(req,res) {
         });
         await workspace.save();
 
+        try {
+            await addJob(
+                queueForEvent(EVENTS.MEMBER_ADDED),
+                EVENTS.MEMBER_ADDED,
+                { workspaceId: workspace._id.toString(), targetUserId: targetUser._id.toString(), email, workspace: workspace.toObject() },
+                { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_ADDED, `${workspace._id.toString()}:${targetUser._id.toString()}`) }
+            );
+        } catch (jobErr) {
+            console.error('[Queue Error] Failed to enqueue MEMBER_ADDED job', jobErr);
+        }
+
         return res.json({message: "Adding member success", data: workspace});
     } catch (err) {
         return res.status(500).json({message: err.message});
@@ -95,6 +119,17 @@ async function deleteWorkspace(req,res) {
         
         workspace.deletedAt = new Date();
         await workspace.save();
+
+        try {
+            await addJob(
+                queueForEvent(EVENTS.WORKSPACE_DELETED),
+                EVENTS.WORKSPACE_DELETED,
+                { workspaceId: workspace._id.toString(), name: workspace.name },
+                { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.WORKSPACE_DELETED, workspace._id.toString()) }
+            );
+        } catch (jobErr) {
+            console.error('[Queue Error] Failed to enqueue WORKSPACE_DELETED job', jobErr);
+        }
 
         return res.json({message: "Deleted workspace"});
     } catch(err) {
@@ -132,6 +167,18 @@ async function removeMember(req,res) {
         
         workspace.members = workspace.members.filter((m) => m.userId.toString() !== targetUserId);
         await workspace.save();
+
+        try {
+            await addJob(
+                queueForEvent(EVENTS.MEMBER_REMOVED),
+                EVENTS.MEMBER_REMOVED,
+                // SỬA: Ép kiểu toObject() cho workspace
+                { workspaceId: workspace._id.toString(), targetUserId, removedBy: currentUserId, workspace: workspace.toObject() },
+                { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_REMOVED, `${workspace._id.toString()}:${targetUserId}`) }
+            );
+        } catch (jobErr) {
+            console.error('[Queue Error] Failed to enqueue MEMBER_REMOVED job', jobErr);
+        }
 
         return res.json({message: "Removed member out workspace"});
     } catch (err) {

@@ -24,10 +24,10 @@ async function getAllDescendantIds(rootFolderId) {
     let queue = [rootFolderId];
 
     while(queue.length > 0) {
-        const children = await Folder.find({parentId: {$in: queue}},'_id');
+        const children = await Folder.find({parentId: {$in: queue}}).setOptions({ignoreSoftDelete: true});
         const childIds = children.map(c => c._id);
-
         if (childIds.length > 0) {
+            const childIds = children.map(c => c._id.toString());
             descendantIds = descendantIds.concat(childIds);
             queue = childIds;
         }else {

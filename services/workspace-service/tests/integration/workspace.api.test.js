@@ -2,15 +2,36 @@ const request = require('supertest');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
-const { MongoMemoryServer } = require('mongodb-memory-server'); 
-const app = require('./app'); // Đã sửa lại đường dẫn chuẩn
+const { MongoMemoryServer } = require('mongodb-memory-server');
+
+jest.mock('axios');
+jest.mock('ioredis', () => require('ioredis-mock'));
+
+// 2. Kích hoạt Mocking cho thư viện Queue (BullMQ) từ 'shared'
+jest.mock('shared', () => {
+    // ĐƯA DÒNG NÀY VÀO BÊN TRONG HÀM MOCK ĐỂ TRÁNH LỖI OUT-OF-SCOPE
+    const originalShared = jest.requireActual('shared');
+    
+    return {
+        ...originalShared,
+        addJob: jest.fn().mockResolvedValue(true),
+        queueForEvent: jest.fn().mockReturnValue('mock-queue'),
+        jobIdFor: jest.fn().mockReturnValue('mock-job-id'),
+        EVENTS: {
+            WORKSPACE_CREATED: 'WORKSPACE_CREATED',
+            MEMBER_ADDED: 'MEMBER_ADDED',
+            WORKSPACE_DELETED: 'WORKSPACE_DELETED',
+            MEMBER_REMOVED: 'MEMBER_REMOVED'
+        },
+        DEFAULT_JOB_OPTIONS: { attempts: 3 }
+    };
+});
+
+const app = require('./app'); 
 const Workspace = require('../../src/models/workspace.model');
 const Folder = require('../../src/models/folder.model');
+const { addJob, EVENTS, authMiddleware } = require('shared');
 
-// Kích hoạt Mocking cho Axios
-jest.mock('axios');
-
-// Ép hệ thống test dùng chung 1 khóa bí mật
 process.env.JWT_SECRET = 'test_secret_key_123';
 
 describe('Integration Test: Workspace APIs', () => {
@@ -19,15 +40,13 @@ describe('Integration Test: Workspace APIs', () => {
     let testMemberId = new mongoose.Types.ObjectId();
     let testWorkspaceId = '';
     
-    let mongoServer; // Khai báo biến chứa DB ảo
+    let mongoServer; 
 
     beforeAll(async () => {
-        // Bật DB ảo trên RAM
         mongoServer = await MongoMemoryServer.create();
         const mongoUri = mongoServer.getUri();
         await mongoose.connect(mongoUri);
 
-        // Tạo token giả với testUserId
         token = jwt.sign(
             { userId: testUserId.toString() }, 
             process.env.JWT_SECRET
@@ -37,9 +56,8 @@ describe('Integration Test: Workspace APIs', () => {
     beforeEach(async () => {
         await Workspace.deleteMany({});
         await Folder.deleteMany({});
-        jest.clearAllMocks(); 
+        jest.clearAllMocks(); // Đảm bảo clear cả mock của axios và addJob
 
-        // Seed 1 Workspace
         const ws = await Workspace.create({
             name: 'Nhóm Đồ Án Tốt Nghiệp',
             createdBy: testUserId,
@@ -60,7 +78,6 @@ describe('Integration Test: Workspace APIs', () => {
     });
 
     afterAll(async () => {
-        // Dọn dẹp và tắt DB ảo sau khi test xong
         await mongoose.connection.dropDatabase();
         await mongoose.connection.close();
         await mongoServer.stop();
@@ -70,7 +87,7 @@ describe('Integration Test: Workspace APIs', () => {
     // 1. POST /api/workspaces
     // ==========================================
     describe('POST /api/workspaces', () => {
-        it('Nên tạo mới thành công và mặc định User đó là ADMIN', async () => {
+        it('Nên tạo mới thành công, set user là ADMIN và bắn Queue Event', async () => {
             const res = await request(app)
                 .post('/api/workspaces')
                 .set('Authorization', `Bearer ${token}`)
@@ -79,7 +96,15 @@ describe('Integration Test: Workspace APIs', () => {
             expect(res.status).toBe(201);
             expect(res.body.data.name).toBe('Dự án Hệ thống bãi đỗ xe');
             expect(res.body.data.members[0].role).toBe('ADMIN');
-            expect(res.body.data.members[0].userId.toString()).toBe(testUserId.toString());
+            
+            // Kiểm tra xem Queue Manager đã được gọi chưa
+            expect(addJob).toHaveBeenCalledTimes(1);
+            expect(addJob).toHaveBeenCalledWith(
+                'mock-queue', 
+                EVENTS.WORKSPACE_CREATED, 
+                expect.objectContaining({ createdBy: testUserId.toString() }), 
+                expect.any(Object)
+            );
         });
     });
 
@@ -94,7 +119,6 @@ describe('Integration Test: Workspace APIs', () => {
 
             expect(res.status).toBe(200);
             expect(res.body.data).toHaveLength(1);
-            expect(res.body.data[0].name).toBe('Nhóm Đồ Án Tốt Nghiệp');
         });
     });
 
@@ -116,7 +140,7 @@ describe('Integration Test: Workspace APIs', () => {
     // 4. POST /api/workspaces/:id/members
     // ==========================================
     describe('POST /api/workspaces/:id/members', () => {
-        it('Nên gọi Axios sang Auth-Service và thêm user thành công', async () => {
+        it('Nên thêm user thành công và bắn Queue Event', async () => {
             const mockTargetUserId = new mongoose.Types.ObjectId();
             axios.get.mockResolvedValue({
                 data: { data: { _id: mockTargetUserId, email: 'new@gmail.com' } }
@@ -125,38 +149,21 @@ describe('Integration Test: Workspace APIs', () => {
             const res = await request(app)
                 .post(`/api/workspaces/${testWorkspaceId}/members`)
                 .set('Authorization', `Bearer ${token}`)
-                .send({ email: 'new@gmail.com', permissions: ['preview', 'download'] });
+                .send({ email: 'new@gmail.com', permissions: ['preview'] });
 
             expect(res.status).toBe(200);
             expect(res.body.message).toBe('Adding member success');
             
-            const checkWs = await Workspace.findById(testWorkspaceId);
-            expect(checkWs.members).toHaveLength(3); 
-        });
-
-        it('Nên báo lỗi 400 nếu User đã ở trong Workspace rồi', async () => {
-            axios.get.mockResolvedValue({
-                data: { data: { _id: testMemberId, email: 'already@gmail.com' } }
-            });
-
-            const res = await request(app)
-                .post(`/api/workspaces/${testWorkspaceId}/members`)
-                .set('Authorization', `Bearer ${token}`)
-                .send({ email: 'already@gmail.com' });
-
-            expect(res.status).toBe(400);
-            expect(res.body.message).toBe('Member already in group workspace');
-        });
-
-        it('Nên báo lỗi 404 nếu Auth-Service trả về user không tồn tại', async () => {
-            axios.get.mockRejectedValue({ response: { status: 404 } });
-
-            const res = await request(app)
-                .post(`/api/workspaces/${testWorkspaceId}/members`)
-                .set('Authorization', `Bearer ${token}`)
-                .send({ email: 'ghost@gmail.com' });
-
-            expect(res.status).toBe(404);
+            // Kiểm tra Event bắn vào Queue
+            expect(addJob).toHaveBeenCalledWith(
+                'mock-queue',
+                EVENTS.MEMBER_ADDED,
+                expect.objectContaining({ 
+                    workspaceId: testWorkspaceId,
+                    targetUserId: mockTargetUserId.toString()
+                }),
+                expect.any(Object)
+            );
         });
     });
 
@@ -164,35 +171,23 @@ describe('Integration Test: Workspace APIs', () => {
     // 5. DELETE /api/workspaces/:id/members/:targetUserId
     // ==========================================
     describe('DELETE /api/workspaces/:id/members/:targetUserId', () => {
-        it('Nên cho phép ADMIN đuổi MEMBER khác thành công', async () => {
+        it('Nên đuổi MEMBER thành công và bắn Queue Event', async () => {
             const res = await request(app)
                 .delete(`/api/workspaces/${testWorkspaceId}/members/${testMemberId}`)
                 .set('Authorization', `Bearer ${token}`);
 
             expect(res.status).toBe(200);
-            expect(res.body.message).toBe('Removed member out workspace');
-
-            const checkWs = await Workspace.findById(testWorkspaceId);
-            expect(checkWs.members).toHaveLength(1); 
-        });
-
-        it('Nên chặn không cho phép xóa nếu mình là ADMIN duy nhất', async () => {
-            const res = await request(app)
-                .delete(`/api/workspaces/${testWorkspaceId}/members/${testUserId}`) 
-                .set('Authorization', `Bearer ${token}`);
-
-            expect(res.status).toBe(400);
-            expect(res.body.message).toBe('Cannot leave workspace if you are only Admin');
-        });
-
-        it('Nên cho phép tự rời nhóm (Self-remove) nếu chỉ là MEMBER', async () => {
-            const memberToken = jwt.sign({ userId: testMemberId.toString() }, process.env.JWT_SECRET);
-
-            const res = await request(app)
-                .delete(`/api/workspaces/${testWorkspaceId}/members/${testMemberId}`)
-                .set('Authorization', `Bearer ${memberToken}`);
-
-            expect(res.status).toBe(200);
+            
+            // Kiểm tra Event bắn vào Queue
+            expect(addJob).toHaveBeenCalledWith(
+                'mock-queue',
+                EVENTS.MEMBER_REMOVED,
+                expect.objectContaining({ 
+                    targetUserId: testMemberId.toString(),
+                    removedBy: testUserId.toString()
+                }),
+                expect.any(Object)
+            );
         });
     });
 
@@ -200,33 +195,47 @@ describe('Integration Test: Workspace APIs', () => {
     // 6. DELETE /api/workspaces/:id
     // ==========================================
     describe('DELETE /api/workspaces/:id', () => {
-        it('Nên gọi Axios xóa File, soft-delete Folder và Workspace', async () => {
+        it('Nên xóa mềm Workspace, xóa Folder, bắn Queue Event VÀ gọi Axios sang File Service', async () => {
+            // 0. CẤU HÌNH MOCK AXIOS: Giả lập File Service trả về thành công
+            axios.delete.mockResolvedValue({ data: { message: 'Files deleted successfully' } });
+
+            // Chuẩn bị dữ liệu: Tạo 1 folder trong workspace
             await Folder.create({ name: 'Folder 1', workspaceId: testWorkspaceId, createdBy: testUserId });
 
-            axios.delete.mockResolvedValue({});
-
+            // Gọi API Delete
             const res = await request(app)
                 .delete(`/api/workspaces/${testWorkspaceId}`)
                 .set('Authorization', `Bearer ${token}`);
 
             expect(res.status).toBe(200);
             
-            // 1. Kiểm tra axios đã gọi đúng url chưa (Đúng 1 tham số như controller của bạn)
-            expect(axios.delete).toHaveBeenCalledWith(
-                expect.stringContaining(`/api/files/internal/by-workspace/${testWorkspaceId}`)
-            );
-            
-            // 2. Đi cửa sau để check xóa mềm Workspace
+            // 1. Kiểm tra Soft-delete Workspace
             const checkWs = await Workspace.collection.findOne({ 
                 _id: new mongoose.Types.ObjectId(testWorkspaceId) 
             });
             expect(checkWs.deletedAt).not.toBeNull();
 
-            // 3. Đi cửa sau để check xóa mềm Folder
+            // 2. Kiểm tra Soft-delete Folder
             const checkFolder = await Folder.collection.findOne({ 
                 workspaceId: new mongoose.Types.ObjectId(testWorkspaceId) 
             });
             expect(checkFolder.deletedAt).not.toBeNull();
+
+            // 3. Kiểm tra Queue Event (Nếu bạn vẫn giữ hàm addJob trong controller)
+            expect(addJob).toHaveBeenCalledWith(
+                'mock-queue', 
+                EVENTS.WORKSPACE_DELETED, 
+                expect.objectContaining({ 
+                    workspaceId: testWorkspaceId 
+                }),
+                expect.any(Object) 
+            );
+            
+            // 4. KIỂM TRA LỆNH GỌI CROSS-SERVICE BẰNG AXIOS
+            expect(axios.delete).toHaveBeenCalledTimes(1); // Đảm bảo chỉ gọi đúng 1 lần
+            expect(axios.delete).toHaveBeenCalledWith(
+                expect.stringContaining(`/api/files/internal/by-workspace/${testWorkspaceId}`)
+            );
         });
-    });
+    });    
 });

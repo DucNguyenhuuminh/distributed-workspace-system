@@ -5,6 +5,8 @@ const PhysicalFile = require('../models/physical-file.model');
 const WORKSPACE_SERVICE_URL = process.env.WORKSPACE_SERVICE_URL || 'http://localhost:3003';
 const STORAGE_SERVICE_URL = process.env.STORAGE_SERVICE_URL || 'http://localhost:3005';
 
+const {addJob, queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('shared');
+
 //-------GET /api/files/-----------
 async function getFiles(req,res) {
     try {
@@ -87,6 +89,17 @@ async function renameFile(req,res) {
         file.originalName = name;
         await file.save();
 
+        try {
+            await addJob(
+                queueForEvent(EVENTS.FILE_RENAMED),
+                EVENTS.FILE_RENAMED,
+                {fileId, newName: name, uploadedBy: userId},
+                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_RENAMED, file._id.toString())}
+            );
+        } catch(jobErr) {
+            console.error('[Queue Error] Failed to enqueue FILE_RENAMED job', jobErr);
+        }
+
         return res.json({message: "Rename successfully", data: file});
     } catch(err) {
         return res.status(500).json({message: err.message});
@@ -126,6 +139,17 @@ async function deleteFile(req,res) {
             {_id: fileId},
             {deletedAt: new Date()}
         );
+
+        try {
+            await addJob(
+                queueForEvent(EVENTS.FILE_TRASHED),
+                EVENTS.FILE_TRASHED,
+                {fileId, uploadedBy:userId},
+                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_TRASHED,fileId)}
+            );
+        } catch(jobErr) {
+            console.error('[Queue Error] Failed to enqueue FILE_TRASHED job', jobErr);
+        }
 
         return res.json({message: "File deleted successfully", data: {file}});
     } catch(err) {
@@ -180,6 +204,18 @@ async function restoreFile(req,res) {
         );
 
         file.deletedAt = null;
+
+        try{
+            await addJob(
+                queueForEvent(EVENTS.FILE_RESTORED),
+                EVENTS.FILE_RESTORED,
+                {fileId, file},
+                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_RESTORED, fileId)}
+            );
+        } catch(jobErr) {
+            console.log('[Queue Error] Failed to enqueue FILE_RESTORED job', jobErr);
+        }
+
         return res.json({ message: "Restore file successfully", data: file });
     } catch(err) {
         return res.status(500).json({ message: err.message });
@@ -280,6 +316,17 @@ async function moveFile(req,res) {
             file.folderId = targetFolderId;
         }
         await file.save();
+
+        try {
+            await addJob(
+                queueForEvent(EVENTS.FILE_MOVED),
+                EVENTS.FILE_MOVED,
+                {fileId, newFolderId: file.folderId, file: file.toObject()},
+                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_MOVED, fileId)}
+            );
+        } catch(jobErr) {
+            console.error('[Queue Error] Failed to enqueue FILE_MOVED job', jobErr);
+        }
 
         return res.json({message: "Move file successfully", data: {file}});
     } catch(err) {

@@ -2,22 +2,34 @@ const mongoose = require('mongoose');
 const Workspace = require('../models/workspace.model');
 const Folder = require('../models/folder.model');
 
-async function checkFolderExists(req,res,next) {
+async function checkFolderExists(req, res, next) {
     try {
         const folderId = req.params.id;
         if (!mongoose.Types.ObjectId.isValid(folderId)) {
             return res.status(400).json({ message: "Invalid Folder ID format" });
         }
 
-        const folder = await Folder.findById(folderId);
+        const isRestoreRoute = req.originalUrl.includes('/restore');
+        let query = Folder.findById(folderId);
+
+        if (isRestoreRoute) {
+            query = query.setOptions({ ignoreSoftDelete: true });
+        }
+
+        const folder = await query;
         if (!folder) {
             return res.status(404).json({message: "Folder not exist"});
         }
         req.folder = folder;
+
         if (folder.workspaceId) {
             const workspace = await Workspace.findById(folder.workspaceId);
             if (!workspace) {
-                return res.status(404).json({message: "Workspace not exist"});
+                if (isRestoreRoute) {
+                    console.warn(`[Warning] Restoring folder ${folderId} but its Workspace is missing.`);
+                } else {
+                    return res.status(404).json({message: "Workspace not exist"});
+                }
             }
             req.workspace = workspace;
         }

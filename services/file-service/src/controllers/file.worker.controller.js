@@ -4,6 +4,8 @@ const PhysicalFile = require('../models/physical-file.model');
 const WORKSPACE_SERVICE_URL = process.env.WORKSPACE_SERVICE_URL || 'http://localhost:3003';
 const STORAGE_SERVICE_URL = process.env.STORAGE_SERVICE_URL || 'http://localhost:3005';
 
+const {addJob,queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('shared');
+
 //-------POST /api/files-worker/hash-----------
 async function checkHash(req,res) {
     try {
@@ -41,6 +43,17 @@ async function checkHash(req,res) {
                 physicalFileId: existingPhysicalFile._id,
                 uploadedBy: userId,
             });
+
+            try {
+                await addJob(
+                    queueForEvent(EVENTS.FILE_MERGED),
+                    EVENTS.FILE_MERGED,
+                    {filename, mimeType: existingPhysicalFile.mimeType, sizeBytes: existingPhysicalFile.sizeBytes, hashString, workspaceId, folderId, uploadId: userId, isDuplicate:true},
+                    {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_MERGED,newFile._id.toString())}
+                );
+            } catch(jobErr) {
+                console.error('[Queue Error] Failed to enqueue FILE_MERGED job in checkHash', jobErr);
+            }
 
             return res.status(200).json({message: "Deduplication successful. File copy instantly", data: {document: newFile, isDuplicate: true}});
         }
@@ -82,6 +95,18 @@ async function initUpload(req,res) {
         } catch(err) {
             return res.status(500).json({message: 'Cannot connect to storage-service'});
         }
+
+        try {
+            await addJob(
+                queueForEvent(EVENTS.FILE_UPLOAD),
+                EVENTS.FILE_UPLOAD,
+                {filename, totalChunks, mimeType, sizeBytes, workspaceId, folderId, uploadedBy: userId},
+                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_UPLOAD, storageData.uploadId)}
+            );
+        } catch(jobErr) {
+            console.error('[Queue Error] Failed to enqueue FILE_UPLOAD job', jobErr);
+        }
+
         return res.status(201).json({
             message: "Init upload successfully",
             data: {
@@ -127,6 +152,17 @@ async function mergeUpload(req,res) {
             physicalFileId: physicalFile._id,
             uploadedBy: userId,
         });
+
+        try {
+            await addJob(
+                queueForEvent(EVENTS.FILE_MERGED),
+                EVENTS.FILE_MERGED,
+                {uploadId, etags, objectName, filename, totalChunks,mimeType, hashString ,sizeBytes, workspaceId, folderId, uploadedBy: userId},
+                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_MERGED, file._id.toString())}
+            );
+        } catch(jobErr) {
+            console.error('[Queue Error] Failed to enqueue FILE_MERGED job', jobErr);
+        }
 
         return res.status(200).json({message: "File merged and saved successful", data: file});
     } catch(err) {

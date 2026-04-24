@@ -1,7 +1,10 @@
 const {authMiddleware,verifyToken} = require('./middlewares/auth.middleware');
 const {validateRequest} = require('./middlewares/validate.middleware');
-const KafkaProducer = require('./kafka/producer');
-const KafkaConsumer = require('./kafka/consumer');
-const {TOPICS, EVENTS} = require('./constants/topics')
+const {getQueue, addJob} = require('./queue/queueProducer');
+const {createWorker} = require('./queue/queueWorker');
+const {EVENTS,DEFAULT_JOB_OPTIONS, queueForEvent, jobIdFor} = require('./queue/queue.config');
 
-module.exports = {authMiddleware, verifyToken, validateRequest, KafkaProducer, KafkaConsumer, TOPICS, EVENTS};
+module.exports = {authMiddleware, verifyToken, validateRequest,
+    getQueue, addJob, createWorker,
+    EVENTS,DEFAULT_JOB_OPTIONS, queueForEvent, jobIdFor
+};

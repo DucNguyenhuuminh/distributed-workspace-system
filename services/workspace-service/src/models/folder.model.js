@@ -28,7 +28,7 @@ const folderSchema = new mongoose.Schema(
 );
 
 folderSchema.pre(/^find/,function() {
-    if (!this.getOptions()._recursed) {
+    if (!this.getOptions().ignoreSoftDelete) {
         this.where({deletedAt: null});
     }
 });

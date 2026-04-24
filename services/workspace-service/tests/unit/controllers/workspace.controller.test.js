@@ -4,9 +4,25 @@ const workspaceController = require('../../../src/controllers/workspace.controll
 const Workspace = require('../../../src/models/workspace.model');
 const Folder = require('../../../src/models/folder.model');
 
+const { addJob, EVENTS } = require('shared'); 
+
 jest.mock('axios');
 jest.mock('../../../src/models/workspace.model');
 jest.mock('../../../src/models/folder.model');
+
+// Kích hoạt Mock cho BullMQ
+jest.mock('shared', () => ({
+    addJob: jest.fn().mockResolvedValue(true),
+    queueForEvent: jest.fn().mockReturnValue('mock-queue'),
+    jobIdFor: jest.fn().mockReturnValue('mock-job-id'),
+    EVENTS: {
+        WORKSPACE_CREATED: 'WORKSPACE_CREATED',
+        MEMBER_ADDED: 'MEMBER_ADDED',
+        WORKSPACE_DELETED: 'WORKSPACE_DELETED',
+        MEMBER_REMOVED: 'MEMBER_REMOVED'
+    },
+    DEFAULT_JOB_OPTIONS: { attempts: 3 }
+}));
 
 describe('Workspace Controller Unit Tests', () => {
     let req, res;
@@ -22,7 +38,14 @@ describe('Workspace Controller Unit Tests', () => {
     describe('createWorkspace', () => {
         it('Thành công: Tạo workspace mới', async () => {
             req.body = { name: 'My Workspace' };
-            const mockWs = { _id: 'ws1', name: 'My Workspace' };
+            
+            // Giả lập _id là một object có hàm toString() giống hành vi của Mongoose
+            const mockWs = { 
+                _id: { toString: () => 'ws1' }, 
+                name: 'My Workspace',
+                // 👉 ĐÃ THÊM HÀM GIẢ toObject
+                toObject: function() { return this; }
+            };
             Workspace.create.mockResolvedValue(mockWs);
 
             await workspaceController.createWorkspace(req, res);
@@ -34,8 +57,9 @@ describe('Workspace Controller Unit Tests', () => {
                     expect.objectContaining({ role: 'ADMIN', userId: currentUserId })
                 ])
             }));
+            
             expect(res.statusCode).toBe(201);
-            expect(res._getJSONData().data).toEqual(mockWs);
+            expect(res._getJSONData().data.name).toEqual('My Workspace');
         });
     });
 
@@ -60,8 +84,11 @@ describe('Workspace Controller Unit Tests', () => {
     describe('addMember', () => {
         beforeEach(() => {
             req.workspace = { 
+                _id: 'ws1', 
                 members: [{ userId: currentUserId }], 
-                save: jest.fn().mockResolvedValue(true) 
+                save: jest.fn().mockResolvedValue(true),
+                // 👉 ĐÃ THÊM HÀM GIẢ toObject
+                toObject: function() { return this; }
             };
             req.body = { email: 'new@test.com' };
         });
@@ -81,7 +108,6 @@ describe('Workspace Controller Unit Tests', () => {
         });
 
         it('Thất bại: User đã ở sẵn trong Workspace (400)', async () => {
-            // Target user trả về trùng với user đang có trong req.workspace
             axios.get.mockResolvedValue({ data: { data: { _id: currentUserId } } });
             await workspaceController.addMember(req, res);
             expect(res.statusCode).toBe(400);
@@ -99,17 +125,30 @@ describe('Workspace Controller Unit Tests', () => {
     });
 
     describe('deleteWorkspace', () => {
-        it('Thành công: Gọi File Service, xóa folder, xóa workspace', async () => {
-            req.workspace = { _id: 'ws1', save: jest.fn().mockResolvedValue(true) };
-            axios.delete.mockResolvedValue({ data: 'ok' });
+        it('Thành công: Cập nhật DB và bắn Queue Event (Không dùng Axios nữa)', async () => {
+            req.workspace = { 
+                _id: 'ws1', 
+                save: jest.fn().mockResolvedValue(true),
+                // 👉 ĐÃ THÊM HÀM GIẢ toObject
+                toObject: function() { return this; }
+            };
             Folder.updateMany.mockResolvedValue({ nModified: 5 });
 
             await workspaceController.deleteWorkspace(req, res);
 
-            expect(axios.delete).toHaveBeenCalledWith(expect.stringContaining('/by-workspace/ws1'));
+            // 1. Kiểm tra Database (Folder và Workspace được xóa mềm)
             expect(Folder.updateMany).toHaveBeenCalledWith({ workspaceId: 'ws1' }, expect.any(Object));
             expect(req.workspace.deletedAt).toBeDefined();
             expect(req.workspace.save).toHaveBeenCalled();
+            
+            // 2. Kiểm tra Queue đã được gọi để bắn Event dọn dẹp
+            expect(addJob).toHaveBeenCalledWith(
+                'mock-queue', 
+                EVENTS.WORKSPACE_DELETED, 
+                expect.objectContaining({ workspaceId: 'ws1' }), 
+                expect.any(Object)
+            );
+
             expect(res.statusCode).toBe(200);
         });
     });
@@ -117,11 +156,14 @@ describe('Workspace Controller Unit Tests', () => {
     describe('removeMember', () => {
         beforeEach(() => {
             req.workspace = { 
+                _id: 'ws1',
                 members: [
                     { userId: currentUserId, role: 'ADMIN' },
                     { userId: 'target456', role: 'MEMBER' }
                 ],
-                save: jest.fn().mockResolvedValue(true) 
+                save: jest.fn().mockResolvedValue(true),
+                // 👉 ĐÃ THÊM HÀM GIẢ toObject
+                toObject: function() { return this; }
             };
         });
 
@@ -141,7 +183,7 @@ describe('Workspace Controller Unit Tests', () => {
         });
 
         it('Thất bại: MEMBER thường định đuổi người khác (403)', async () => {
-            req.params.targetUserId = currentUserId; // currentUserId ở đây đóng vai trò nạn nhân
+            req.params.targetUserId = currentUserId; // currentUserId đóng vai trò nạn nhân
             req.user.userId = 'target456'; // Người gửi request là MEMBER thường
             await workspaceController.removeMember(req, res);
             expect(res.statusCode).toBe(403);
@@ -149,7 +191,7 @@ describe('Workspace Controller Unit Tests', () => {
         });
 
         it('Thất bại: Admin duy nhất tự rời nhóm (400)', async () => {
-            req.params.targetUserId = currentUserId; // Tự xóa mình
+            req.params.targetUserId = currentUserId; 
             // Set up: Chỉ có 1 Admin
             req.workspace.members = [{ userId: currentUserId, role: 'ADMIN' }];
             
@@ -162,7 +204,6 @@ describe('Workspace Controller Unit Tests', () => {
             req.params.targetUserId = 'target456';
             await workspaceController.removeMember(req, res);
             
-            // Hàm filter sẽ loại target456 ra, mảng ban đầu có 2 người, giờ còn 1
             expect(req.workspace.members.length).toBe(1);
             expect(req.workspace.save).toHaveBeenCalled();
             expect(res.statusCode).toBe(200);
