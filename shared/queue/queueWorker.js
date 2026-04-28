@@ -15,7 +15,7 @@ function createWorker(queueName, processor, opts = {}) {
     worker.on('completed',job => {
         console.log(`[Queue: ${queueName}] job ${job?.id} completed`)
     });
-    worker.set(queueName,worker);
+    workers.set(queueName,worker);
     return worker;
 }
 

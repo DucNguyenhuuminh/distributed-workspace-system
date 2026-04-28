@@ -273,8 +273,8 @@ async function getFileLink(req,res) {
         });
     } catch(err) {
         console.error("[file-service] Error while create link:", err.message);
-        if (err.storageServiceUrl) {
-            return res.status(err.storageServiceUrl.status).json(err.response.data);
+        if (err.response) {
+            return res.status(err.response.status).json(err.response.data);
         }
         return res.status(500).json({message: "Error system while handle link"});
     }

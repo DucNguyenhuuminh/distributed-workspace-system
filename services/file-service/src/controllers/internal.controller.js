@@ -38,15 +38,15 @@ async function restoreByFolders(req,res) {
     try {
         const {folderIds} = req.body;
         if (!Array.isArray(folderIds) || folderIds.length === 0) {
-            return res.status(400).json("Folder Id is required")
+            return res.status(400).json({message: "Folder Id is required"})
         }
 
         await Document.updateMany(
-            {flderId: {$in: folderIds}},
+            {folderId: {$in: folderIds}},
             {deletedAt: null}
         );
 
-        return res.status(200).json("Restore files in folderersId")
+        return res.status(200).json({message: "Restore files in folderId"})
     } catch(err) {
         return res.status(500).json({message: err.message});
     }

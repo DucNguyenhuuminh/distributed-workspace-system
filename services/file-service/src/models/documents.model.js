@@ -40,7 +40,7 @@ const documentSchema = new Schema({
 },{timestamps: true});
 
 documentSchema.pre(/^find/,function() {
-    if (!this.getOptions()._rescued) {
+    if (!this.getOptions().includeDeleted) {
         this.where({deletedAt: null});
     }
 });

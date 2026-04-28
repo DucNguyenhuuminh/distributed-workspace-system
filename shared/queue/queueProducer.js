@@ -17,7 +17,7 @@ function getQueue(name) {
         const queue = new Queue(name, {connection: connection});
         caches.set(name, queue);
     }
-    return caches.get(name).queue;
+    return caches.get(name);
 }
 
 async function addJob(queueName, jobName, data, opts= {}) {

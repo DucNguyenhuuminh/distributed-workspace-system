@@ -1,7 +1,7 @@
 {
   "name": "workspace-service",
   "version": "1.0.0",
-  "description": "",
+  "description": "The service of workspace and folder",
   "main": "index.js",
   "scripts": {
     "dev": "nodemon src/index.js",

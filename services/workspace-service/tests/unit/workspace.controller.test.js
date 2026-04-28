@@ -1,8 +1,8 @@
 // ── Mock trước khi require bất kỳ module nào ──────────────
 jest.mock('axios',                         () => require('./mocks/axios.mock'));
 jest.mock('shared',                        () => require('./mocks/shared.mock'));
-jest.mock('../src/models/workspace.model', () => require('./mocks/models.mock').WorkspaceMock);
-jest.mock('../src/models/folder.model',    () => require('./mocks/models.mock').FolderMock);
+jest.mock('../../src/models/workspace.model', () => require('./mocks/models.mock').WorkspaceMock);
+jest.mock('../../src/models/folder.model',    () => require('./mocks/models.mock').FolderMock);
 
 const request = require('supertest');
 const express = require('express');
