@@ -10,10 +10,12 @@ const folderSchema = new mongoose.Schema(
         workspaceId:{
             type: mongoose.Schema.Types.ObjectId,
             default: null,
+            index: true,
         },
         parentId:{
             type: mongoose.Schema.Types.ObjectId,
             default: null,
+            index: true,
         },
         createdBy:{
             type: mongoose.Schema.Types.ObjectId,
@@ -22,13 +24,14 @@ const folderSchema = new mongoose.Schema(
         deletedAt:{
             type: Date,
             default: null,
+            index: true,
         },
     },
     {timestamps: true}
 );
 
 folderSchema.pre(/^find/,function() {
-    if (!this.getOptions().ignoreSoftDelete) {
+    if (!this.getOptions().includeDeleted) {
         this.where({deletedAt: null});
     }
 });

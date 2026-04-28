@@ -12,11 +12,9 @@ const memberSchema = new mongoose.Schema(
             default: "MEMBER",
         },
         permissions:{
-            type: [{
-                type: [],
-                enum: ["preview", "download", "upload"]
-            }],
-            default: ["preview"],
+            type: String,
+            enum: ['viewer', 'editor'],
+            default: 'viewer',
         },
     }, {_id: false});
 
@@ -29,19 +27,20 @@ const workspaceSchema = new mongoose.Schema(
         },
         createdBy:{
             type: mongoose.Schema.Types.ObjectId,
-            default: null,
+            required: true,
         },
         members: [memberSchema],
         deletedAt:{
             type: Date,
             default: null,
+            index: true,
         },
     },
     {timestamps: true}
 );
 
 workspaceSchema.pre(/^find/, function() {
-    if (!this.getOptions()._recursed) {
+    if (!this.getOptions().includeDeleted) {
         this.where({deletedAt: null});
     }
 });

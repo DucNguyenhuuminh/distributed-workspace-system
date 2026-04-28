@@ -1,16 +1,87 @@
 const Workspace = require('../models/workspace.model');
 const Folder = require('../models/folder.model');
 const axios = require('axios');
-const {getBreadcrumbPath, getAllDescendantIds, isCircularMove} = require('../utils/folder.util');
 const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL || 'http://localhost:3002';
 
 const {addJob, queueForEvent, jobIdFor, DEFAULT_JOB_OPTIONS, EVENTS} = require('shared');
+
+//-------------------HELPER--------------------
+async function getBreadcrumbPath(folderId) {
+    const breadcrumb = [];
+    let currentId = folderId;
+
+    while(currentId) {
+        const folder = await Folder.findById(currentId);
+        if (!folder)  break;
+
+        breadcrumb.unshift({
+            _id: folder._id,
+            name: folder.name,
+            parentId: folder.parentId
+        });
+        currentId = folder.parentId;
+    }
+    return breadcrumb;
+}
+
+// Using for delete
+async function getAllDescendantIds(rootFolderId) {
+    let descendantIds = [];
+    let queue = [rootFolderId];
+
+    while(queue.length > 0) {
+        const children = await Folder.find({parentId: {$in: queue}}).setOptions({ignoreSoftDelete: true});
+        const childIds = children.map(c => c._id);
+        if (childIds.length > 0) {
+            const childIds = children.map(c => c._id.toString());
+            descendantIds = descendantIds.concat(childIds);
+            queue = childIds;
+        }else {
+            queue = [];
+        }
+    }
+    return descendantIds;
+}
+
+async function isCircularMove(sourceFolderId, targetParentId) {
+    let currentParentId = targetParentId;
+    let depth = 0;
+
+    while(currentParentId) {
+        if (currentParentId.toString() === sourceFolderId.toString()) {
+            return true;
+        }
+        const parentNode = await Folder.findById(currentParentId,'parentId');
+        currentParentId = parentNode ? parentNode.parentId : null;
+        depth++;
+        if (depth > 100) {
+            throw new Error("System Error: Tree depth exceeded");
+        }
+    }
+    return false;
+}
+//-------------------HELPER--------------------
+
+//-------------------LOGICS--------------------
 
 //-------POST /api/folders-----------
 async function createFolder(req,res) {
     try {
         const userId = req.user.userId;
         const {name, parentId, workspaceId} = req.body;
+
+        //check exists & permission
+        if (workspaceId) {
+            const workspace = await Workspace.findById(workspaceId);
+            if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+
+            const member = workspace.members.find((m) => m.userId.toString() === userId);
+            if (!member) return res.status(403).json({ message: 'You are not a member of this workspace' });
+
+            const canEdit = member.role === 'ADMIN' || member.permissions.includes('editor');
+            if (!canEdit) return res.status(403).json({ message: 'No permission to modify in this workspace' });
+        }
+        
 
         const folder = await Folder.create({
             name,
@@ -32,7 +103,7 @@ async function createFolder(req,res) {
 
         return res.status(201).json({message: "Created folder successful", data: folder});
     } catch (err) {
-        return res.status(500).json({messsage: err.messsage});
+        return res.status(500).json({message: err.message});
     }
 }
 
@@ -42,16 +113,35 @@ async function getFolders(req,res) {
         const userId = req.user.userId;
         const {workspaceId, parentId} = req.query;
 
+        //check exists & permission
+        if (workspaceId) {
+            const workspace = await Workspace.findById(workspaceId);
+            if (!workspace) {
+                return res.status(404).json({message: "Workspace not found"});
+            }
+            const member = workspace.members.some((m) => m.userId.toString() === userId);
+            if (!member) {
+                return res.status(403).json({message: "You do not have permission to access this workspace"});
+            }
+        }
+
         let query = {};
         if (parentId) {
             query.parentId = parentId;
-        }else {
-            query.parentId = null;
             if (workspaceId) {
                 query.workspaceId = workspaceId;
             }else {
-                query.ownerId = userId;
+                query.createdBy     = userId;
                 query.workspaceId = null;
+            }
+        }else {
+            if (workspaceId) {
+                query.workspaceId = workspaceId;
+                query.parentId    = null;
+            } else {
+                query.createdBy     = userId;
+                query.workspaceId = null;
+                query.parentId    = null;
             }
         }
 
@@ -65,8 +155,29 @@ async function getFolders(req,res) {
 //-------GET /api/folders/:id-----------
 async function getFolderById(req,res) {
     try {
-        const folder = req.folder;
-        const breadcrumb = await getBreadcrumbPath(folder._id);
+        const folderId = req.params.id;
+        const userId = req.user.userId;
+
+        //check exists & permission
+        const folder = await Folder.findById(folderId);
+        if (!folder) {
+            return res.status(404).json({message: "Folder not exist"});
+        }
+        if (folder.workspaceId) {
+            const workspace = await Workspace.findById(folder.workspaceId);
+            if (!workspace) {
+                return res.status(404).json({message: "Workspace not exist"});
+            }
+            const member = workspace.members.some((m) => m.userId.toString() === userId);
+            if (!member) {
+                return res.status(403).json({message: "You do not have permission to access this folder"});
+            }
+        }else {
+            if (folder.createdBy.toString() !== userId) {
+                return res.status(403).json({message: "You do not have permission to access this folder"});
+            }
+        }
+        const breadcrumb = await getBreadcrumbPath(folderId);
 
         return res.json({data: folder, breadcrumb: breadcrumb});
     } catch(err) {
@@ -77,8 +188,31 @@ async function getFolderById(req,res) {
 //-------PUT /api/folders/:id/rename-----------
 async function renameFolder(req,res) {
     try {
-        const folder = req.folder;
+        const folderId = req.params.id;
+        const userId = req.user.userId;
         const {name} = req.body;
+
+        //check exists & permission
+        const folder = await Folder.findById(folderId);
+        if (!folder) {
+            return res.status(404).json({message: "Folder not exist"});
+        }
+        if (!folder.workspaceId) {
+            if (folder.createdBy.toString() !== userId) {
+                return res.status(403).json({message: "No permission to modify this folder"});
+            }
+        }else {
+            const workspace = await Workspace.findById(folder.workspaceId);
+            const targetMember = workspace.members.find((m) => m.userId.toString() === userId);
+            if (!targetMember) {
+                return res.status(403).json({message: "You are not a member of this workspace"});
+            }
+
+            const canEdit = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
+            if (!canEdit) {
+                return res.status(403).json({message: "No permission to modify folder in this workspace"});
+            }
+        }
 
         folder.name = name;
         await folder.save();
@@ -102,9 +236,32 @@ async function renameFolder(req,res) {
 //-------DELETE /api/folders/:id-----------
 async function deleteFolder(req,res) {
     try {
+        const userId = req.user.userId;
         const folderId = req.params.id;
         const childFolderIds = await getAllDescendantIds(folderId);
         const allFolderIds = [folderId, ...childFolderIds];
+
+        //check exists & permission
+        const folder = await Folder.findById(folderId);
+        if (!folder) {
+            return res.status(404).json({message: "Folder not exist"});
+        }
+        if (!folder.workspaceId) {
+            if (folder.createdBy.toString() !== userId) {
+                return res.status(403).json({message: "No permission to modify this folder"});
+            }
+        }else {
+            const workspace = await Workspace.findById(folder.workspaceId);
+            const targetMember = workspace.members.find((m) => m.userId.toString() === userId);
+            if (!targetMember) {
+                return res.status(403).json({message: "You are not a member of this workspace"});
+            }
+
+            const canEdit = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
+            if (!canEdit) {
+                return res.status(403).json({message: "No permission to modify folder in this workspace"});
+            }
+        }
 
         await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders/${folderId}`,
             {data: {folderIds: allFolderIds},
@@ -135,12 +292,37 @@ async function deleteFolder(req,res) {
 //-------PUT /api/folders/:id/restore-----------
 async function restoreFolder(req,res) {
     try {
-        const folder = req.folder;
+        const folderId = req.params.id;
+        const userId = req.user.userId;
 
+        //check exists & permission
+        const folder = await Folder.findById(folderId).setOptions({includeDeleted: true});
+        if (!folder) {
+            return res.status(404).json({message: "Folder not exist"});
+        }
+        if (!folder.workspaceId) {
+            if (folder.createdBy.toString() !== userId) {
+                return res.status(403).json({message: "No permission to modify this folder"});
+            }
+        }else {
+            const workspace = await Workspace.findById(folder.workspaceId);
+            const targetMember = workspace.members.find((m) => m.userId.toString() === userId);
+            if (!targetMember) {
+                return res.status(403).json({message: "You are not a member of this workspace"});
+            }
+
+            const canEdit = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
+            if (!canEdit) {
+                return res.status(403).json({message: "No permission to modify folder in this workspace"});
+            }
+        }
+
+        //check deleted time
         if (!folder.deletedAt) {
             return res.status(400).json({message: "Folder not in the trash"});
         }
 
+        // delete logic
         const now = new Date();
         const deletedTime = new Date(folder.deletedAt);
         const diffInMilliseconds = now.getTime() - deletedTime.getTime();
@@ -150,7 +332,7 @@ async function restoreFolder(req,res) {
             return res.status(400).json({message: "Can not restore. File already in trash over 10 days"})
         }
 
-        const childFolderIds = await getAllDescendantIds(req.folder._id);
+        const childFolderIds = await getAllDescendantIds(folder._id);
         const allFoldersIds = [folder._id.toString(), ...childFolderIds];
 
         try {
@@ -189,9 +371,30 @@ async function restoreFolder(req,res) {
 async function moveFolder(req,res) {
     try {
         const userId = req.user.userId;
-        const sourceFolder = req.folder;
+        const folderId = req.params.id;
         const {newParentId, targetWorkspaceId} = req.body;
 
+        //check exists & permission
+        const sourceFolder = await Folder.findById(folderId);
+        if (!sourceFolder) {
+            return res.status(404).json({message: "Folder not exist"});
+        }
+        if (!sourceFolder.workspaceId) {
+            if (sourceFolder.createdBy.toString() !== userId) {
+                return res.status(403).json({message: "No permission to modify this folder"});
+            }
+        }else {
+            const workspace = await Workspace.findById(sourceFolder.workspaceId);
+            const targetMember = workspace.members.find((m) => m.userId.toString() === userId);
+            if (!targetMember) {
+                return res.status(403).json({message: "You are not a member of this workspace"});
+            }
+
+            const canEdit = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
+            if (!canEdit) {
+                return res.status(403).json({message: "No permission to modify folder in this workspace"});
+            }
+        }
         if (newParentId && sourceFolder._id.toString() === newParentId) {
             return res.status(400).json({message: "Cannot move folder into itself"});
         }
@@ -221,7 +424,7 @@ async function moveFolder(req,res) {
                 if (!targetMember) {
                     return res.status(403).json({message: "No permission to move to the target workspace"});
                 }
-                const canUpload = targetMember.role === "ADMIN" || targetMember.permissions.includes("upload");
+                const canUpload = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
                 if (!canUpload) { 
                     return res.status(403).json({message: "No permission to move to the target workspace"});
                 }
@@ -236,9 +439,9 @@ async function moveFolder(req,res) {
                 if (!targetMember) {
                     return res.status(403).json({message: "ou are not a member of the target workspace"});
                 }
-                const canUpload = targetMember.role === "ADMIN" || targetMember.permissions.includes("upload");
+                const canUpload = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
                 if (!canUpload) {
-                    return res.status(403).json({message: "No 'upload' permission"});
+                    return res.status(403).json({message: "No 'editor' permission"});
                 }
 
                 finalWorkspaceId = targetWorkspaceId;

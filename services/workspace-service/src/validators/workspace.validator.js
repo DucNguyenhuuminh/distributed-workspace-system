@@ -12,7 +12,7 @@ const add_member_valid = Joi.object({
         'string.email': "Email not valid",
         'any.required': "User's email is required",
     }),
-    permissions: Joi.array().items(Joi.string().valid("preview", "download","upload")).default(["preview"]),
+    permissions: Joi.string().valid("viewer", "editor").default("viewer"),
 });
 
 function validate(schema) {

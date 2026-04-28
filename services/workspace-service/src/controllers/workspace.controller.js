@@ -6,6 +6,8 @@ const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:3001'
 
 const{addJob, queueForEvent, jobIdFor,EVENTS,DEFAULT_JOB_OPTIONS} = require('shared');
 
+//-------------------LOGIC--------------------
+
 //-------POST /api/workspaces-----------
 async function createWorkspace(req,res) {
     try {
@@ -18,7 +20,7 @@ async function createWorkspace(req,res) {
             members: [{
                 userId,
                 role: "ADMIN",
-                permissions: ["preview", "download", "upload"],
+                permissions: 'editor',
             }],
         });
 
@@ -53,7 +55,20 @@ async function getWorkspaces(req,res) {
 //-------GET /api/workspaces/:id-----------
 async function getWorkspaceById(req,res) {
     try {
-        return res.json({data: req.workspace});
+        const workspaceId = req.params.id;
+        const userId = req.user.userId;
+
+        // check exists & permission 
+        const workspace = await Workspace.findById(workspaceId);
+        if (!workspace) {
+            return res.status(404).json({ message: "Workspace not exist" });
+        }
+        const member = workspace.members.some((m) => m.userId.toString() === userId);
+        if (!member) {
+            return res.status(403).json({message: "You do not have permission to access" });
+        }
+
+        return res.json({data: workspace});
     } catch(err) {
         return res.status(500).json({message: err.message});
     }
@@ -62,12 +77,25 @@ async function getWorkspaceById(req,res) {
 //-------POST /api/workspaces/:id/members-----------
 async function addMember(req,res) {
     try {
-        const workspace = req.workspace;
+        const workspaceId = req.params.id;
+        const adminId = req.user.userId;
         const {email, permissions} = req.body;
+
+        //check exists & permission
+        const workspace = await Workspace.findById(workspaceId);
+        if (!workspace) {
+            return res.status(404).json({ message: "Workspace not exist" });
+        }
+        const member = workspace.members.find((m) => m.userId.toString() === adminId);
+        if (!member || member.role !== "ADMIN") {
+            return res.status(403).json({ message: "Only Admin can perform this action" });
+        }
 
         let targetUser;
         try {
-            const response = await axios.get(`${AUTH_SERVICE_URL}/api/auth/internal/find-by-email`,{params: {email}});
+            const response = await axios.get(`${AUTH_SERVICE_URL}/api/auth/internal/find-by-email`,
+                {params: {email}}
+            );
             targetUser = response.data.data;
         } catch(err) {
             if (err.response?.status === 404) {
@@ -84,7 +112,7 @@ async function addMember(req,res) {
         workspace.members.push({
             userId: targetUser._id,
             role: "MEMBER",
-            permissions: permissions || ["preview"],
+            permissions: permissions || 'viewer',
         });
         await workspace.save();
 
@@ -108,8 +136,18 @@ async function addMember(req,res) {
 //-------DELETE /api/workspaces/:id-----------
 async function deleteWorkspace(req,res) {
     try {
-        const workspace = req.workspace;
-        const workspaceId = workspace._id;
+        const workspaceId = req.params.id;
+        const adminId = req.user.userId;
+        
+        //check exists & permission
+        const workspace = await Workspace.findById(workspaceId);
+        if (!workspace) {
+            return res.status(404).json({ message: "Workspace not exist" });
+        }
+        const member = workspace.members.find((m) => m.userId.toString() === adminId);
+        if (!member || member.role !== "ADMIN") {
+            return res.status(403).json({ message: "Only Admin can perform this action" });
+        }
             
         await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-workspace/${workspaceId}`);
         await Folder.updateMany(
@@ -141,9 +179,14 @@ async function deleteWorkspace(req,res) {
 async function removeMember(req,res) {
     try {
         const currentUserId = req.user.userId;
-        const targetUserId = req.params.targetUserId;
-        const workspace = req.workspace;
+        const targetUserId = req.params.targetUserId; 
+        const workspaceId = req.params.id;
 
+        //check exists & permission
+        const workspace = await Workspace.findById(workspaceId);
+        if (!workspace) {
+            return res.status(404).json({ message: "Workspace not exist" });
+        }
         const targetMember = workspace.members.find((m) => m.userId.toString() === targetUserId);
         if (!targetMember) {
             return res.status(400).json({message: "Member not in this workspace"});
@@ -172,7 +215,6 @@ async function removeMember(req,res) {
             await addJob(
                 queueForEvent(EVENTS.MEMBER_REMOVED),
                 EVENTS.MEMBER_REMOVED,
-                // SỬA: Ép kiểu toObject() cho workspace
                 { workspaceId: workspace._id.toString(), targetUserId, removedBy: currentUserId, workspace: workspace.toObject() },
                 { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_REMOVED, `${workspace._id.toString()}:${targetUserId}`) }
             );
