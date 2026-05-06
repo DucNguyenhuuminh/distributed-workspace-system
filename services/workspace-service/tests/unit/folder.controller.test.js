@@ -151,43 +151,87 @@ describe('POST /api/folders', () => {
 // ═══════════════════════════════════════════════════════════
 // GET /api/folders — getFolders
 // ═══════════════════════════════════════════════════════════
-describe('GET /api/folders', () => {
+describe('GET /api/folders/root/items', () => {
   const app = createApp();
 
-  test('✅ Lấy danh sách folder My Drive root thành công', async () => {
-    Folder.find.mockResolvedValue([getFreshFolder()]);
-    const res = await request(app).get('/api/folders');
+  test('✅ Lấy My Drive root (không workspaceId) → 200 + trả về folders và files', async () => {
+    Folder.find.mockReturnValue(smartQuery([getFreshFolder()]));
+    axios.get.mockResolvedValue({ data: { data: [{ _id: 'file-1', name: 'My File.pdf' }] } });
+
+    const res = await request(app).get('/api/folders/root/items');
+    
     expect(res.status).toBe(200);
+    // 🟢 Kiểm tra format trả về mới { folders, files }
+    expect(res.body.folders).toHaveLength(1);
+    expect(res.body.files).toHaveLength(1);
+    expect(res.body.files[0].name).toBe('My File.pdf');
+
+    // 🟢 Kiểm tra xem Controller truyền query đúng cho My Drive chưa
+    expect(Folder.find).toHaveBeenCalledWith({
+      createdBy: 'user-001',
+      workspaceId: null,
+      parentId: null,
+      deletedAt: null
+    });
   });
 
-  test('✅ Lấy folder con trong My Drive (có parentId)', async () => {
-    Folder.find.mockResolvedValue([getFreshFolder()]);
-    const res = await request(app).get('/api/folders').query({ parentId: VALID_TARGET_ID });
-    expect(res.status).toBe(200);
-  });
-
-  test('✅ Lấy folder trong workspace thành công', async () => {
+  test('✅ Lấy Workspace root thành công → 200', async () => {
     mockWorkspaceDB([getFreshWorkspace({ _id: VALID_WS_ID })]);
-    Folder.find.mockResolvedValue([getFreshFolder()]);
-    const res = await request(app).get('/api/folders').query({ workspaceId: VALID_WS_ID });
+    Folder.find.mockReturnValue(smartQuery([getFreshFolder()]));
+    axios.get.mockResolvedValue({ data: { data: [] } });
+
+    const res = await request(app).get('/api/folders/root/items').query({ workspaceId: VALID_WS_ID });
+    
     expect(res.status).toBe(200);
+    expect(Folder.find).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: VALID_WS_ID,
+      parentId: null
+    }));
   });
 
   test('❌ Workspace không tồn tại → 404', async () => {
-    mockWorkspaceDB([]);
-    const res = await request(app).get('/api/folders').query({ workspaceId: NOT_FOUND_ID });
+    mockWorkspaceDB([]); // DB trống không tìm thấy Workspace
+
+    const res = await request(app).get('/api/folders/root/items').query({ workspaceId: NOT_FOUND_ID });
+    
     expect(res.status).toBe(404);
+    expect(res.body.message).toBe('Workspace not found');
+    expect(Folder.find).not.toHaveBeenCalled(); // Chặn ngay, không gọi DB nữa
   });
 
   test('❌ User không phải thành viên workspace → 403', async () => {
+    // Mock workspace nhưng mảng members rỗng
     mockWorkspaceDB([getFreshWorkspace({ _id: VALID_WS_ID, members: [] })]);
-    const res = await request(app).get('/api/folders').query({ workspaceId: VALID_WS_ID });
+    
+    const res = await request(app).get('/api/folders/root/items').query({ workspaceId: VALID_WS_ID });
+    
     expect(res.status).toBe(403);
+    expect(res.body.message).toBe('You do not have permission to access this workspace');
   });
 
-  test('❌ Lỗi database → 500', async () => {
-    Folder.find.mockRejectedValue(new Error('DB Error'));
-    const res = await request(app).get('/api/folders');
+  test('✅ File Service lỗi (Axios sập) → Vẫn trả 200 và mảng files rỗng', async () => {
+    Folder.find.mockReturnValue(smartQuery([getFreshFolder()]));
+    
+    // Giả lập File Service bị sập
+    axios.get.mockRejectedValue(new Error('File Service timeout'));
+
+    const res = await request(app).get('/api/folders/root/items');
+    
+    expect(res.status).toBe(200);
+    expect(res.body.folders).toHaveLength(1);
+    // 🟢 Nhánh Catch của Axios: Nuốt lỗi, fallback về mảng rỗng an toàn
+    expect(res.body.files).toEqual([]); 
+  });
+
+  test('❌ Lỗi database (Folder.find) → 500', async () => {
+    // Giả lập Mongoose Error an toàn với smartQuery
+    Folder.find.mockImplementation(() => {
+      const q = Promise.reject(new Error('DB Error'));
+      q.setOptions = jest.fn().mockReturnValue(q);
+      return q;
+    });
+
+    const res = await request(app).get('/api/folders/root/items');
     expect(res.status).toBe(500);
   });
 });
@@ -201,19 +245,45 @@ describe('GET /api/folders/:id', () => {
   test('✅ Lấy My Drive folder thành công + có breadcrumb', async () => {
     const folder = getFreshFolder();
     mockFolderDB([folder]);
+    
+    // Mock 2 câu query mới thêm trong controller
+    Folder.find.mockReturnValue(smartQuery([{ _id: 'sub-folder-1' }])); // sub-folders
+    axios.get.mockResolvedValue({ data: { data: [{ _id: 'file-1' }] } }); // files
 
     const res = await request(app).get(`/api/folders/${folder._id}`);
+    
     expect(res.status).toBe(200);
-    expect(res.body.breadcrumb).toBeDefined();
+    // Cập nhật lại đường dẫn biến (thêm .data)
+    expect(res.body.data.breadcrumb).toBeDefined();
+    expect(res.body.data.folderInfo._id).toBe(folder._id.toString());
+    expect(res.body.data.folders).toHaveLength(1);
+    expect(res.body.data.files).toHaveLength(1);
   });
 
   test('✅ Lấy workspace folder thành công', async () => {
     const folder = getFreshFolder({ workspaceId: VALID_WS_ID });
     mockFolderDB([folder]);
     mockWorkspaceDB([getFreshWorkspace({ _id: VALID_WS_ID })]);
+    
+    Folder.find.mockReturnValue(smartQuery([]));
+    axios.get.mockResolvedValue({ data: { data: [] } });
 
     const res = await request(app).get(`/api/folders/${folder._id}`);
     expect(res.status).toBe(200);
+    expect(res.body.data.folderInfo.workspaceId).toBe(VALID_WS_ID);
+  });
+
+  test('✅ File Service lỗi (Axios sập) → Vẫn trả 200 và files rỗng', async () => {
+    const folder = getFreshFolder();
+    mockFolderDB([folder]);
+    Folder.find.mockReturnValue(smartQuery([]));
+    
+    // Giả lập sập Axios
+    axios.get.mockRejectedValue(new Error('Network timeout'));
+
+    const res = await request(app).get(`/api/folders/${folder._id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.files).toEqual([]); // Nuốt lỗi, trả về mảng rỗng
   });
 
   test('❌ Folder không tồn tại → 404', async () => {
@@ -231,7 +301,11 @@ describe('GET /api/folders/:id', () => {
   });
 
   test('❌ Lỗi database → 500', async () => {
-    Folder.findById.mockReturnValue(Promise.reject(new Error('DB Error')));
+    Folder.findById.mockImplementation(() => {
+      const q = Promise.reject(new Error('DB Error'));
+      q.setOptions = jest.fn().mockReturnValue(q);
+      return q;
+    });
     const res = await request(app).get(`/api/folders/${VALID_TARGET_ID}`);
     expect(res.status).toBe(500);
   });
@@ -470,6 +544,7 @@ describe('PUT /api/folders/:id/move', () => {
     const childFolder = getFreshFolder({ _id: '648000000000000000000002', parentId: sourceFolder._id });
 
     mockFolderDB([sourceFolder, childFolder]);
+    Folder.find.mockReturnValueOnce(smartQuery([childFolder])).mockReturnValue(smartQuery([]));
 
     const res = await request(app)
       .put(`/api/folders/${sourceFolder._id}/move`)

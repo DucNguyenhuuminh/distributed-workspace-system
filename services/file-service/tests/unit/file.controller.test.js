@@ -2,6 +2,9 @@
 jest.mock('axios', () => require('./mocks/axios.mock'));
 jest.mock('shared', () => require('./mocks/shared.mock'));
 jest.mock('../../src/models/documents.model', () => require('./mocks/models.mock').DocumentMock);
+jest.mock('../../src/models/physical-file.model', () => ({
+  findById: jest.fn() 
+}));
 
 const request = require('supertest');
 const express = require('express');
@@ -10,7 +13,8 @@ const mongoose = require('mongoose');
 const { addJob } = require('shared');
 
 const { DocumentMock: Document, getFreshDocument } = require('./mocks/models.mock');
-const filesController = require('../../src/controllers/file.controller'); 
+const filesController = require('../../src/controllers/file.controller');
+const PhysicalFile = require('../../src/models/physical-file.model');
 
 // ── 2. Cài đặt App giả lập ────────────────────────────────────
 function createApp() {
@@ -89,22 +93,47 @@ describe('GET /api/files', () => {
 describe('GET /api/files/:id', () => {
   const app = createApp();
 
-  test('✅ Xem chi tiết file thành công (Owner) → 200', async () => {
+  test('✅ Xem chi tiết file My Drive thành công (Owner) → 200', async () => {
     Document.findById.mockReturnValue(smartQuery(getFreshDocument()));
     const res = await request(app).get(`/api/files/${VALID_ID}`);
     expect(res.status).toBe(200);
-  });
-
-  test('❌ File không tồn tại → 404', async () => {
-    Document.findById.mockReturnValue(smartQuery(null));
-    const res = await request(app).get(`/api/files/${VALID_ID}`);
-    expect(res.status).toBe(404);
   });
 
   test('❌ Xem My Drive của người khác → 403', async () => {
     Document.findById.mockReturnValue(smartQuery(getFreshDocument({ uploadedBy: 'user-999' })));
     const res = await request(app).get(`/api/files/${VALID_ID}`);
     expect(res.status).toBe(403);
+  });
+
+  test('✅ Xem chi tiết file Workspace (Có trong member) → 200', async () => {
+    Document.findById.mockReturnValue(smartQuery(getFreshDocument({ workspaceId: 'ws-123' })));
+    axios.get.mockResolvedValueOnce({ data: { data: { members: [{ userId: 'user-001' }] } } });
+
+    const res = await request(app).get(`/api/files/${VALID_ID}`);
+    expect(res.status).toBe(200);
+  });
+
+  test('❌ Xem file Workspace (Không phải member) → 403', async () => {
+    Document.findById.mockReturnValue(smartQuery(getFreshDocument({ workspaceId: 'ws-123' })));
+    axios.get.mockResolvedValueOnce({ data: { data: { members: [{ userId: 'user-999' }] } } });
+
+    const res = await request(app).get(`/api/files/${VALID_ID}`);
+    expect(res.status).toBe(403);
+  });
+
+  test('❌ API Workspace bị sập → 500', async () => {
+    Document.findById.mockReturnValue(smartQuery(getFreshDocument({ workspaceId: 'ws-123' })));
+    axios.get.mockRejectedValueOnce(new Error('Network Down'));
+
+    const res = await request(app).get(`/api/files/${VALID_ID}`);
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('Cannot connect to workspace-service');
+  });
+
+  test('❌ File không tồn tại → 404', async () => {
+    Document.findById.mockReturnValue(smartQuery(null));
+    const res = await request(app).get(`/api/files/${VALID_ID}`);
+    expect(res.status).toBe(404);
   });
 });
 
@@ -280,6 +309,9 @@ describe('PUT /api/files/:id/move/:targetFolderId', () => {
   test('✅ Move file vào folder mới thành công → 200', async () => {
     const file = getFreshDocument();
     Document.findById.mockResolvedValue(file);
+    
+    // Mock PhysicalFile để code trong Controller không bị lỗi TypeError
+    PhysicalFile.findById.mockResolvedValue({ minioObjectPath: 'file.pdf', mimeType: 'pdf' });
 
     const res = await request(app).put(`/api/files/${VALID_ID}/move/folder-2`);
     expect(res.status).toBe(200);
@@ -290,8 +322,11 @@ describe('PUT /api/files/:id/move/:targetFolderId', () => {
   test('✅ Move file ra thư mục gốc (targetFolderId = null) → 200', async () => {
     const file = getFreshDocument();
     Document.findById.mockResolvedValue(file);
+    
+    
+    PhysicalFile.findById.mockResolvedValue({ minioObjectPath: 'file.pdf', mimeType: 'pdf' });
 
-    const res = await request(app).put(`/api/files/${VALID_ID}/move/null`);
+    const res = await request(app).put(`/api/files/${VALID_ID}/move/null`); 
     expect(res.status).toBe(200);
     expect(file.folderId).toBeNull();
   });

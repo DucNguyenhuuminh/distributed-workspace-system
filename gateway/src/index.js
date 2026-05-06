@@ -61,6 +61,12 @@ app.use(createProxyMiddleware({
     changeOrigin: true
 }));
 
+app.use(createProxyMiddleware({
+    pathFilter: ['/api/search'],
+    target: services.searchService,
+    changeOrigin: true
+}));
+
 app.use('*',(req,res) => {
     res.status(404).json({message: "API Gateway: Route not exists"});
 });
@@ -72,4 +78,5 @@ app.listen(PORT, () => {
     console.log(`Direct Workpace    -> ${services.workspaceService}`);
     console.log(`Direct Storage     -> ${services.storageService}`);
     console.log(`Direct File        -> ${services.fileService}`);
+    console.log(`Direct Search      -> ${services.searchService}`)
 });

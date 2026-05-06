@@ -25,15 +25,19 @@ async function checkHash(req,res) {
                     );
                     const workspace = response.data.data;
                     const member = workspace.members.find((m) => m.userId.toString() === userId);
-                    if (!member || !member.permissions.includes('upload')) {
-                        return res.status(403).json({message:"No permission 'upload in this workspace'"});
+                    if (!member) {
+                        return res.status(403).json({message:"You are not a member of this workspace"});
+                    }
+                    const canEdit = member.role === 'ADMIN' || member.permissions.includes("editor");
+                    if (!canEdit) {
+                        return res.status(403).json({message: "No permission to upload in this workspace"});
                     }
                 } catch(err) {
                     if (err.response?.status === 403) {
                         return res.status(403).json({ message: 'No permission in this workspace' });
                     }
                     return res.status(500).json({ message: 'Cannot connect to workspace-service' });
-                }
+                }   
             }
 
             const newFile = await Document.create({
@@ -48,7 +52,7 @@ async function checkHash(req,res) {
                 await addJob(
                     queueForEvent(EVENTS.FILE_MERGED),
                     EVENTS.FILE_MERGED,
-                    {filename, mimeType: existingPhysicalFile.mimeType, sizeBytes: existingPhysicalFile.sizeBytes, hashString, workspaceId, folderId, uploadId: userId, isDuplicate:true},
+                    {filename, mimeType: existingPhysicalFile.mimeType, sizeBytes: existingPhysicalFile.sizeBytes, hashString, workspaceId, folderId, actorId: userId, isDuplicate: true },
                     {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_MERGED,newFile._id.toString())}
                 );
             } catch(jobErr) {
@@ -77,8 +81,12 @@ async function initUpload(req,res) {
                 );
                 const workspace = response.data.data;
                 const member = workspace.members.find((m) => m.userId.toString() === userId);
-                if (!member || !member.permissions.includes('upload')) {
-                    return res.status(403).json({message:"No permission 'upload in this workspace'"});
+                if (!member) {
+                    return res.status(403).json({message:"You are not a member of this workspace"});
+                }
+                const canEdit = member.role === 'ADMIN' || member.permissions.includes("editor");
+                if (!canEdit) {
+                    return res.status(403).json({message: "No permission to upload in this workspace"});
                 }
             } catch(err) {
                 if (err.response?.status === 403) {
@@ -112,7 +120,7 @@ async function initUpload(req,res) {
             data: {
                 uploadId:     storageData.uploadId,
                 objectName:   storageData.objectName,
-                presignedUrls: storageData.presignedUrls,
+                presignedUrls: storageData.presignedURLs,
                 meta: {filename, mimeType, sizeBytes, workspaceId, folderId },
             },
         });

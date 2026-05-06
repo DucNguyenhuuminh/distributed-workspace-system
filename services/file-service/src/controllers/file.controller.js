@@ -7,7 +7,7 @@ const STORAGE_SERVICE_URL = process.env.STORAGE_SERVICE_URL || 'http://localhost
 
 const {addJob, queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('shared');
 
-//-------GET /api/files/-----------
+//-------GET /api/files-----------
 async function getFiles(req,res) {
     try {
         const userId = req.user.userId;
@@ -45,10 +45,23 @@ async function getFileById(req,res) {
             return res.status(404).json({message: "File not exists"});
         }
 
-        const isOwner = file.uploadedBy.toString() === userId;
-        if (!isOwner && !file.workspaceId) {
-            return res.status(403).json({message: "You not have permission to access this file"});
+        if (!file.workspaceId) {
+            if (file.uploadedBy.toString() !== userId) {
+                return res.status(403).json({ message: "You not have permission to access this file" });
+            }
+        } else {
+            try {
+                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
+                    { headers: { Authorization: req.headers.authorization } });
+                const workspace = response.data?.data;
+                if (!workspace) return res.status(404).json({ message: "Workspace not found" });
+                const member = workspace.members.find(m => m.userId.toString() === userId);
+                if (!member) return res.status(403).json({ message: "You not have permission to access this file" });
+            } catch (err) {
+                return res.status(500).json({ message: "Cannot connect to workspace-service" });
+            }
         }
+        
         return res.json({data: file});
     } catch(err) {
         return res.status(500).json({message: err.message});
@@ -75,8 +88,8 @@ async function renameFile(req,res) {
             try {
                 const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}});
-                
-                const workspace = response.data.data;
+                const workspace = response.data?.data;
+                if (!workspace) return res.status(404).json({ message: "Workspace not found" });
                 const member = workspace.members.find((m) => m.userId.toString() === userId);
                 if (!member) {
                     return res.status(403).json({message: "You not have permission in this workspace"});
@@ -93,7 +106,7 @@ async function renameFile(req,res) {
             await addJob(
                 queueForEvent(EVENTS.FILE_RENAMED),
                 EVENTS.FILE_RENAMED,
-                {fileId, newName: name, uploadedBy: userId},
+                {fileId, newName: name, actorId: userId, fileName: file.originalName, workspaceId: file.workspaceId},
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_RENAMED, file._id.toString())}
             );
         } catch(jobErr) {
@@ -125,7 +138,8 @@ async function deleteFile(req,res) {
             try {
                 const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}});
-                const workspace = response.data.data;
+                const workspace = response.data?.data;
+                if (!workspace) return res.status(404).json({ message: "Workspace not found" });
                 const member = workspace.members.find((m) => m.userId.toString() === userId);
                 if (!member || member.role !== "ADMIN") {
                     return res.status(403).json({message: "You not have permission in this workspace"});
@@ -144,7 +158,7 @@ async function deleteFile(req,res) {
             await addJob(
                 queueForEvent(EVENTS.FILE_TRASHED),
                 EVENTS.FILE_TRASHED,
-                {fileId, uploadedBy:userId},
+                {fileId, actorId: userId, fileName: file.originalName, workspaceId: file.workspaceId},
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_TRASHED,fileId)}
             );
         } catch(jobErr) {
@@ -188,7 +202,8 @@ async function restoreFile(req,res) {
             try {
                 const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}});
-                const workspace = response.data.data;
+                const workspace = response.data?.data;
+                if (!workspace) return res.status(404).json({ message: "Workspace not found" });
                 const member = workspace.members.find((m) => m.userId.toString() === userId);
                 if (!member || member.role !== "ADMIN") {
                     return res.status(403).json({message: "Only Workspace's Admin can move this file"});
@@ -209,7 +224,7 @@ async function restoreFile(req,res) {
             await addJob(
                 queueForEvent(EVENTS.FILE_RESTORED),
                 EVENTS.FILE_RESTORED,
-                {fileId, file},
+                {fileId, file, actorId: userId, workspaceId: file.workspaceId},
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_RESTORED, fileId)}
             );
         } catch(jobErr) {
@@ -227,7 +242,7 @@ async function getFileLink(req,res) {
     try {
         const userId = req.user.userId;
         const fileId = req.params.id;
-        const action = req.query.action || 'preview';
+        const action = req.query.action || 'viewer';
 
         const file = await Document.findById(fileId).populate('physicalFileId');
         if (!file) {
@@ -242,11 +257,17 @@ async function getFileLink(req,res) {
             try {
                 const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}});
-                const workspace = response.data.data;
-                const member = workspace.members.find((m) => m.userId.toString() === userId);
-                const isPermissions = action === 'download' ? 'download': 'preview';
-                if (!member || !member.permissions || !member.permissions.includes(isPermissions)) {
-                    return res.status(403).json({message: "You not have permission in this workspace"});
+                const workspace = response.data?.data;
+                if (!workspace) return res.status(404).json({ message: "Workspace not found" });
+                const member = workspace.members.find(m => m.userId.toString() === userId);
+                if (!member) {
+                    return res.status(403).json({ message: "You not have permission in this workspace" });
+                }
+                // permissions can be array or string in different seeds
+                const perms = member.permissions;
+                const allowed = member.role === 'ADMIN' || (perms && (Array.isArray(perms) ? perms.includes(action) : String(perms).includes(action)));
+                if (!allowed) {
+                    return res.status(403).json({ message: "You not have permission in this workspace" });
                 }
             } catch(err) {
                 return res.status(500).json({message: "Cannot connect to workspace-service"});
@@ -300,7 +321,8 @@ async function moveFile(req,res) {
             try {
                 const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}});
-                const workspace = response.data.data;
+                const workspace = response.data?.data;
+                if (!workspace) return res.status(404).json({ message: "Workspace not found" });
                 const member = workspace.members.find((m) => m.userId.toString() === userId);
                 if (!member || member.role !== "ADMIN") {
                     return res.status(403).json({message: "Only Workspace's Admin can move this file"});
@@ -316,17 +338,37 @@ async function moveFile(req,res) {
             file.folderId = targetFolderId;
         }
         await file.save();
-
+        const physicalFile = await PhysicalFile.findById(file.physicalFileId);
         try {
             await addJob(
                 queueForEvent(EVENTS.FILE_MOVED),
                 EVENTS.FILE_MOVED,
-                {fileId, newFolderId: file.folderId, file: file.toObject()},
+                {documentId:     file._id.toString(),
+                    objectName:     physicalFile.minioObjectPath,
+                    mimeType:       physicalFile.mimeType,         
+                    newFolderId:    targetFolderId || null,
+                    newWorkspaceId: file.workspaceId || null,
+                    uploadedBy:     userId},
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_MOVED, fileId)}
             );
         } catch(jobErr) {
             console.error('[Queue Error] Failed to enqueue FILE_MOVED job', jobErr);
         }
+
+        await addJob(
+            queueForEvent(EVENTS.FILE_MOVED),
+            EVENTS.FILE_MOVED,
+            {
+                documentId: file._id.toString(),
+                objectName: physicalFile.minioObjectPath,
+                mimeType: physicalFile.mimeType,         
+                newFolderId: targetFolderId || null,
+                newWorkspaceId: file.workspaceId || null,
+                actorId: userId,
+                fileName: file.originalName
+            },
+            {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_RESTORED, fileId)
+        });
 
         return res.json({message: "Move file successfully", data: {file}});
     } catch(err) {

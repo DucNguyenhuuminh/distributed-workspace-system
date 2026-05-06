@@ -120,7 +120,7 @@ async function addMember(req,res) {
             await addJob(
                 queueForEvent(EVENTS.MEMBER_ADDED),
                 EVENTS.MEMBER_ADDED,
-                { workspaceId: workspace._id.toString(), targetUserId: targetUser._id.toString(), email, workspace: workspace.toObject() },
+                { workspaceId: workspace._id.toString(), targetUserId: targetUser._id.toString(), email, actoreId: adminId, workspaceName: workspace.name, workspace: workspace.toObject() },
                 { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_ADDED, `${workspace._id.toString()}:${targetUser._id.toString()}`) }
             );
         } catch (jobErr) {
@@ -162,7 +162,7 @@ async function deleteWorkspace(req,res) {
             await addJob(
                 queueForEvent(EVENTS.WORKSPACE_DELETED),
                 EVENTS.WORKSPACE_DELETED,
-                { workspaceId: workspace._id.toString(), name: workspace.name },
+                { workspaceId: workspace._id.toString(), name: workspace.name, actorId: adminId, membersId: workspace.members.map(m => m.userId.toString()) },
                 { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.WORKSPACE_DELETED, workspace._id.toString()) }
             );
         } catch (jobErr) {
@@ -215,7 +215,7 @@ async function removeMember(req,res) {
             await addJob(
                 queueForEvent(EVENTS.MEMBER_REMOVED),
                 EVENTS.MEMBER_REMOVED,
-                { workspaceId: workspace._id.toString(), targetUserId, removedBy: currentUserId, workspace: workspace.toObject() },
+                { workspaceId: workspace._id.toString(), targetUserId, removedBy: currentUserId, actorId: currentUserId, workspaceName: workspace.name, workspace: workspace.toObject() },
                 { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_REMOVED, `${workspace._id.toString()}:${targetUserId}`) }
             );
         } catch (jobErr) {

@@ -1,10 +1,10 @@
 const router = require('express').Router();
-const {checkHash, initUpload, mergeUpload} = require('../controllers/file.worker.controller');
+const {checkHash, initUpload, mergeUpload} = require('../controllers/file-worker.controller');
 const {
     checkHashValidator,
     initUploadValidator,
     mergeUploadValidator
-} = require('../validators/file.worker.validator');
+} = require('../validators/file-worker.validator');
 const {verifyToken, validateRequest} = require('shared');
 
 router.use(verifyToken);

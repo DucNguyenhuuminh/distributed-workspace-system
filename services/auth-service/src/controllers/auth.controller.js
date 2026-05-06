@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/auth.model');
+const { addJob, queueForEvent, jobIdFor, DEFAULT_JOB_OPTIONS } = require('shared');
 
-//-------PUT /api/auth/register-----------
+//-------POST /api/auth/register-----------
 async function register (req,res) {
     try {
         const {email,password,username,globalRole} = req.body;
@@ -12,6 +13,13 @@ async function register (req,res) {
         }
 
         const user = await User.create({email,password,username,globalRole});
+
+        await addJob(
+            queueForEvent(EVENTS.USER_REGISTERED),
+            EVENTS.USER_REGISTERED,
+            { userId: user._id.toString(), email: user.email },
+            { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.USER_REGISTERED, user._id.toString()) }
+        );
 
         return res.status(201).json({
             message: "Register successfully",
@@ -62,7 +70,7 @@ async function login (req,res) {
     }
 }
 
-//-------get /api/auth/profile-----------
+//-------GET /api/auth/profile-----------
 async function getProfile (req,res) {
     try {
         const user = await User.findById(req.user.userId);

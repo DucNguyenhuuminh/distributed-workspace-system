@@ -1,0 +1,93 @@
+const axios         = require('axios');
+const chromaService = require('../config/chroma.config');
+
+//-------- GET /api/search/---------------
+async function search(req, res) {
+  try {
+    const { q, workspaceId } = req.query;
+    const userId             = req.user.userId;
+
+    if (!q || q.trim().length === 0) {
+      return res.status(400).json({ message: 'Câu hỏi tìm kiếm là bắt buộc' });
+    }
+
+    if (workspaceId) {
+      try {
+        const wsRes   = await axios.get(
+          `${process.env.WORKSPACE_SERVICE_URL}/api/workspaces/${workspaceId}`,
+          { headers: { Authorization: req.headers.authorization } }
+        );
+        const isMember = wsRes.data.data.members.some(
+          (m) => m.userId.toString() === userId
+        );
+        if (!isMember) {
+          return res.status(403).json({ message: 'Không có quyền tìm kiếm trong workspace này' });
+        }
+      } catch (err) {
+        if (err.response?.status === 404) {
+          return res.status(404).json({ message: 'Workspace không tồn tại' });
+        }
+        return res.status(500).json({ message: 'Cannot connect to workspace-service' });
+      }
+    }
+
+    const where = workspaceId
+      ? { workspaceId }
+      : { uploadedBy: userId };
+
+    const results = await chromaService.query({
+      text:     q,  
+      nResults: 10,
+      where,
+    });
+
+    if (!results.ids[0]?.length) {
+      return res.json({
+        message: 'Search successfully',
+        data:    { query: q, total: 0, results: [] },
+      });
+    }
+
+    // Format kết quả
+    const hits = results.ids[0].map((id, i) => ({
+      documentId: id,
+      score:      parseFloat((1 - results.distances[0][i]).toFixed(4)),
+      preview:    results.documents[0][i]?.slice(0, 200),
+      metadata:   results.metadatas[0][i],
+    }));
+
+    try {
+      const ids     = hits.map((h) => h.documentId).join(',');
+      const fileRes = await axios.get(
+        `${process.env.FILE_SERVICE_URL}/api/files/internal/by-searching`,
+        { params: { ids } }
+      );
+
+      const docMap = {};
+      fileRes.data.data.forEach((doc) => {
+        docMap[doc._id.toString()] = doc;
+      });
+
+      // Merge ChromaDB result với MongoDB data
+      const enrichedHits = hits.map((hit) => ({
+        ...hit,
+        document: docMap[hit.documentId] || null,
+      }));
+
+      return res.json({
+        message: 'Search successfully',
+        data:    { query: q, total: enrichedHits.length, results: enrichedHits },
+      });
+    } catch (err) {
+      console.error('[Search] Cannot enrich with file-service:', err.message);
+      return res.json({
+        message: 'Search successfully',
+        data:    { query: q, total: hits.length, results: hits },
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
+module.exports = { search };

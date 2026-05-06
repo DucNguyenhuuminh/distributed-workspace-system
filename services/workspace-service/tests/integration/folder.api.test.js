@@ -183,49 +183,101 @@ describe('[Integration] POST /api/folders', () => {
 // ═══════════════════════════════════════════════════════════
 // GET /api/folders
 // ═══════════════════════════════════════════════════════════
-describe('[Integration] GET /api/folders', () => {
+describe('[Integration] GET /api/folders/root/items', () => {
   const app = createApp();
 
-  test('✅ Lấy My Drive root folders — chỉ thấy của mình', async () => {
-    await seedFolder({ name: 'Admin Folder' });
-    await seedFolder({ name: 'Outsider Folder', createdBy: OUTSIDER_ID });
+  test('✅ Lấy My Drive root (không workspaceId) → 200 + trả về folders và files', async () => {
+    // 1. Seed data vào DB thật
+    await seedFolder({ name: 'Root 1' });
+    const root2 = await seedFolder({ name: 'Root 2' });
+    await seedFolder({ name: 'Child Folder', parentId: root2._id }); // Không phải root, sẽ bị bỏ qua
+    await seedFolder({ name: 'Deleted Folder', deletedAt: new Date() }); // Bị xóa, sẽ bị bỏ qua
+    await seedFolder({ name: 'Outsider Folder', createdBy: OUTSIDER_ID }); // Của người khác, sẽ bị bỏ qua
 
-    const res = await request(app).get('/api/folders').set('Authorization', 'Bearer token-admin');
-    expect(res.status).toBe(200);
-    expect(res.body.data).toHaveLength(1);
-  });
+    // Giả lập File Service trả về 1 file
+    axios.get.mockResolvedValueOnce({ data: { data: [{ _id: 'file-1', name: 'File 1.pdf' }] } });
 
-  test('✅ Lấy folder con theo parentId', async () => {
-    const parent = await seedFolder({ name: 'Parent' });
-    await seedFolder({ name: 'Child 1', parentId: parent._id });
-    await seedFolder({ name: 'Child 2', parentId: parent._id });
-
+    // 2. Gọi API
     const res = await request(app)
-      .get('/api/folders')
-      .set('Authorization', 'Bearer token-admin')
-      .query({ parentId: parent._id.toString() });
+      .get('/api/folders/root/items')
+      .set('Authorization', 'Bearer token-admin');
 
+    // 3. Kiểm chứng
     expect(res.status).toBe(200);
-    expect(res.body.data).toHaveLength(2);
-  });
-
-  test('✅ Lấy workspace folders', async () => {
-    const ws = await seedWorkspace();
-    await seedFolder({ name: 'WS Folder 1', workspaceId: ws._id });
+    // Chỉ có 'Root 1' và 'Root 2' thỏa mãn: của ADMIN, không có cha, chưa xóa, không thuộc WS
+    expect(res.body.folders).toHaveLength(2); 
+    expect(res.body.files).toHaveLength(1);
+    expect(res.body.files[0].name).toBe('File 1.pdf');
     
+    // Kiểm tra xem Axios có được gọi đúng param cho My Drive không
+    expect(axios.get).toHaveBeenCalledWith(
+      expect.stringContaining('/api/files/internal'),
+      expect.objectContaining({
+        params: expect.objectContaining({
+          uploadedBy: ADMIN_ID,
+          workspaceId: null,
+          folderId: null,
+          deletedAt: null
+        })
+      })
+    );
+  });
+
+  test('✅ Lấy Workspace root thành công → 200', async () => {
+    const ws = await seedWorkspace(); // Mặc định ADMIN_ID là member
+    await seedFolder({ name: 'WS Root', workspaceId: ws._id });
+    await seedFolder({ name: 'WS Child', workspaceId: ws._id, parentId: new mongoose.Types.ObjectId() });
+
+    axios.get.mockResolvedValueOnce({ data: { data: [] } });
+
     const res = await request(app)
-      .get('/api/folders')
-      .set('Authorization', 'Bearer token-admin')
-      .query({ workspaceId: ws._id.toString() });
+      .get('/api/folders/root/items')
+      .query({ workspaceId: ws._id.toString() })
+      .set('Authorization', 'Bearer token-admin');
 
     expect(res.status).toBe(200);
-    expect(res.body.data).toHaveLength(1);
+    expect(res.body.folders).toHaveLength(1);
+    expect(res.body.folders[0].name).toBe('WS Root');
   });
-  
+
   test('❌ Workspace không tồn tại → 404', async () => {
     const fakeId = new mongoose.Types.ObjectId();
-    const res = await request(app).get('/api/folders').query({ workspaceId: fakeId.toString() }).set('Authorization', 'Bearer token-admin');
+    const res = await request(app)
+      .get('/api/folders/root/items')
+      .query({ workspaceId: fakeId.toString() })
+      .set('Authorization', 'Bearer token-admin');
+
     expect(res.status).toBe(404);
+    expect(res.body.message).toBe('Workspace not found');
+  });
+
+  test('❌ User không phải thành viên workspace → 403', async () => {
+    const ws = await seedWorkspace(); // ws này chỉ có ADMIN_ID và MEMBER_ID
+    
+    // Dùng token-outsider (không có trong mảng members)
+    const res = await request(app)
+      .get('/api/folders/root/items')
+      .query({ workspaceId: ws._id.toString() })
+      .set('Authorization', 'Bearer token-outsider');
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toBe('You do not have permission to access this workspace');
+  });
+
+  test('✅ File Service lỗi (Axios sập) → Vẫn trả 200 và mảng files rỗng', async () => {
+    await seedFolder({ name: 'Root Folder' });
+    
+    // Giả lập File Service bị sập
+    axios.get.mockRejectedValueOnce(new Error('Network Error'));
+
+    const res = await request(app)
+      .get('/api/folders/root/items')
+      .set('Authorization', 'Bearer token-admin');
+
+    expect(res.status).toBe(200);
+    expect(res.body.folders).toHaveLength(1);
+    // Tính năng Graceful Degradation: Nuốt lỗi axios và trả về file rỗng
+    expect(res.body.files).toEqual([]); 
   });
 });
 
@@ -238,10 +290,31 @@ describe('[Integration] GET /api/folders/:id', () => {
   test('✅ Lấy My Drive folder + breadcrumb đúng', async () => {
     const parent = await seedFolder({ name: 'Parent' });
     const child  = await seedFolder({ name: 'Child', parentId: parent._id });
+    
+    // Mock Axios để giả lập File Service trả về file
+    axios.get.mockResolvedValueOnce({ data: { data: [{ name: 'Test File.pdf' }] } });
 
     const res = await request(app).get(`/api/folders/${child._id}`).set('Authorization', 'Bearer token-admin');
+    
     expect(res.status).toBe(200);
-    expect(res.body.breadcrumb).toHaveLength(2);
+    // Đổi key truy xuất sang .data
+    expect(res.body.data.breadcrumb).toHaveLength(2);
+    expect(res.body.data.folderInfo.name).toBe('Child');
+    expect(res.body.data.files).toHaveLength(1);
+    expect(res.body.data.folders).toHaveLength(0); // Không có thư mục con nào
+  });
+
+  test('✅ File Service sập → Vẫn trả 200, lấy được folder info và files rỗng', async () => {
+    const folder = await seedFolder();
+    
+    // Giả lập Axios sập
+    axios.get.mockRejectedValueOnce(new Error('Service Down'));
+
+    const res = await request(app).get(`/api/folders/${folder._id}`).set('Authorization', 'Bearer token-admin');
+    
+    expect(res.status).toBe(200);
+    expect(res.body.data.folderInfo._id).toBe(folder._id.toString());
+    expect(res.body.data.files).toEqual([]); // Mảng rỗng an toàn
   });
 
   test('❌ Xem folder trong workspace nhưng không phải member → 403', async () => {
@@ -377,11 +450,13 @@ describe('[Integration] DELETE /api/folders/:id', () => {
       .delete(`/api/folders/${folder._id}`)
       .set('Authorization', 'Bearer token-admin');
 
+    axios.get.mockResolvedValueOnce({ data: { data: [] } });
+
     const res = await request(app)
-      .get('/api/folders')
+      .get('/api/folders/root/items')
       .set('Authorization', 'Bearer token-admin');
 
-    expect(res.body.data).toHaveLength(0);
+    expect(res.body.folders).toHaveLength(0);
   });
 
   test('❌ File service lỗi khi xóa → 500', async () => {
@@ -453,11 +528,14 @@ describe('[Integration] PUT /api/folders/:id/restore', () => {
       .put(`/api/folders/${folder._id}/restore`)
       .set('Authorization', 'Bearer token-admin');
 
+      axios.get.mockResolvedValueOnce({ data: { data: [] } });
+
     const listRes = await request(app)
-      .get('/api/folders')
+      .get('/api/folders/root/items')
       .set('Authorization', 'Bearer token-admin');
 
-    expect(listRes.body.data).toHaveLength(1);
+
+    expect(listRes.body.folders).toHaveLength(1);
   });
 
   test('✅ Restore thành công nhưng BullMQ lỗi (vẫn trả 200)', async () => {

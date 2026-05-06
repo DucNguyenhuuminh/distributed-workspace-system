@@ -31,14 +31,10 @@ async function getAllDescendantIds(rootFolderId) {
 
     while(queue.length > 0) {
         const children = await Folder.find({parentId: {$in: queue}}).setOptions({ignoreSoftDelete: true});
-        const childIds = children.map(c => c._id);
-        if (childIds.length > 0) {
-            const childIds = children.map(c => c._id.toString());
-            descendantIds = descendantIds.concat(childIds);
-            queue = childIds;
-        }else {
-            queue = [];
-        }
+        const childIds = children.map(c => c._id.toString());
+        if (childIds.length === 0) break;
+        descendantIds.push(...childIds);
+        queue = childIds;
     }
     return descendantIds;
 }
@@ -63,7 +59,6 @@ async function isCircularMove(sourceFolderId, targetParentId) {
 //-------------------HELPER--------------------
 
 //-------------------LOGICS--------------------
-
 //-------POST /api/folders-----------
 async function createFolder(req,res) {
     try {
@@ -107,11 +102,11 @@ async function createFolder(req,res) {
     }
 }
 
-//-------GET /api/folders-----------
-async function getFolders(req,res) {
+//-------GET /api/folders/root/items-----------
+async function getRootItems(req,res) {
     try {
         const userId = req.user.userId;
-        const {workspaceId, parentId} = req.query;
+        const {workspaceId} = req.query;
 
         //check exists & permission
         if (workspaceId) {
@@ -125,28 +120,49 @@ async function getFolders(req,res) {
             }
         }
 
-        let query = {};
-        if (parentId) {
-            query.parentId = parentId;
-            if (workspaceId) {
-                query.workspaceId = workspaceId;
-            }else {
-                query.createdBy     = userId;
-                query.workspaceId = null;
-            }
+        let folderQuery = {};
+        let fileQuery = {};
+
+        if (workspaceId) {        
+            folderQuery = {
+                workspaceId,
+                parentId: null,
+                deletedAt: null,
+            };
+            fileQuery = {
+                workspaceId,
+                folderId: null,
+                deletedAt: null,
+            };
         }else {
-            if (workspaceId) {
-                query.workspaceId = workspaceId;
-                query.parentId    = null;
-            } else {
-                query.createdBy     = userId;
-                query.workspaceId = null;
-                query.parentId    = null;
-            }
+            folderQuery = {
+                createdBy: userId,
+                workspaceId: null,
+                parentId: null,
+                deletedAt:null,
+            };
+            fileQuery = {
+                uploadedBy: userId,
+                workspaceId: null,
+                folderId: null,
+                deletedAt: null,
+            };
         }
 
-        const folders = await Folder.find(query);
-        return res.json({data: folders});
+        const folders = await Folder.find(folderQuery);
+
+        let files = [];
+        try {
+            const response = await axios.get(`${FILE_SERVICE_URL}/api/files/internal/by-folders/getFiles`, {
+                params: fileQuery,
+                headers: {Authorization: req.headers.authorization},
+            });
+
+            files = response.data?.data;
+        } catch(err) {
+            console.error("File service error:",err.response?.data || err.message);
+        }
+        return res.json({folders, files});
     } catch(err) {
         return res.status(500).json({message: err.message});
     }
@@ -158,28 +174,58 @@ async function getFolderById(req,res) {
         const folderId = req.params.id;
         const userId = req.user.userId;
 
-        //check exists & permission
-        const folder = await Folder.findById(folderId);
-        if (!folder) {
+        // 1. Kiểm tra folder có tồn tại không
+        const currentFolder = await Folder.findById(folderId);
+        if (!currentFolder) {
             return res.status(404).json({message: "Folder not exist"});
         }
-        if (folder.workspaceId) {
-            const workspace = await Workspace.findById(folder.workspaceId);
-            if (!workspace) {
-                return res.status(404).json({message: "Workspace not exist"});
-            }
+
+        // 2. Kiểm tra quyền truy cập (giống hệt logic cũ)
+        if (currentFolder.workspaceId) {
+            const workspace = await Workspace.findById(currentFolder.workspaceId);
+            if (!workspace) return res.status(404).json({message: "Workspace not exist"});
+            
             const member = workspace.members.some((m) => m.userId.toString() === userId);
-            if (!member) {
-                return res.status(403).json({message: "You do not have permission to access this folder"});
-            }
-        }else {
-            if (folder.createdBy.toString() !== userId) {
+            if (!member) return res.status(403).json({message: "You do not have permission to access this folder"});
+        } else {
+            if (currentFolder.createdBy.toString() !== userId) {
                 return res.status(403).json({message: "You do not have permission to access this folder"});
             }
         }
+
+        // 3. Query lấy danh sách thư mục con (sub-folders)
+        const folders = await Folder.find({
+            parentId: folderId,
+            deletedAt: null // Không lấy các folder đã xoá
+        });
+
+        // 4. Query lấy danh sách file thông qua File Service nội bộ
+        let files = [];
+        try {
+            const response = await axios.get(`${FILE_SERVICE_URL}/api/files/internal/by-folders/getFiles`, {
+                params: { 
+                    folderId: folderId, 
+                    deletedAt: null 
+                },
+                headers: { Authorization: req.headers.authorization },
+            });
+            files = response.data?.data || [];
+        } catch(err) {
+            console.error("File service error:", err.response?.data || err.message);
+        }
+
+        // 5. Lấy breadcrumb
         const breadcrumb = await getBreadcrumbPath(folderId);
 
-        return res.json({data: folder, breadcrumb: breadcrumb});
+        // Trả về tất cả trong 1 response
+        return res.json({
+            data: {
+                folderInfo: currentFolder,
+                folders: folders,
+                files: files,
+                breadcrumb: breadcrumb
+            }
+        });
     } catch(err) {
         return res.status(500).json({message: err.message});
     }
@@ -203,6 +249,9 @@ async function renameFolder(req,res) {
             }
         }else {
             const workspace = await Workspace.findById(folder.workspaceId);
+            if (!workspace) {
+                return res.status(404).json({ message: "Workspace not found" });
+            }
             const targetMember = workspace.members.find((m) => m.userId.toString() === userId);
             if (!targetMember) {
                 return res.status(403).json({message: "You are not a member of this workspace"});
@@ -221,7 +270,7 @@ async function renameFolder(req,res) {
             await addJob(
                 queueForEvent(EVENTS.FOLDER_RENAMED),
                 EVENTS.FOLDER_RENAMED,
-                {folderId: folder._id.toString(), newName: name, folder: folder.toObject()},
+                {folderId: folder._id.toString(), newName: name, actorId: userId, workspaceId: folder.workspaceId, folder: folder.toObject()},
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_RENAMED, folder._id.toString())}
             );
         } catch(jobErr) {
@@ -252,6 +301,9 @@ async function deleteFolder(req,res) {
             }
         }else {
             const workspace = await Workspace.findById(folder.workspaceId);
+            if (!workspace) {
+                return res.status(404).json({ message: "Workspace not found" });
+            }
             const targetMember = workspace.members.find((m) => m.userId.toString() === userId);
             if (!targetMember) {
                 return res.status(403).json({message: "You are not a member of this workspace"});
@@ -263,10 +315,10 @@ async function deleteFolder(req,res) {
             }
         }
 
-        await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders/${folderId}`,
-            {data: {folderIds: allFolderIds},
-            headers: {Authorization: req.headers.authorization}}
-        );
+        await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders`, {
+            data: { folderIds: allFolderIds },
+            headers: { Authorization: req.headers.authorization }
+        });
         await Folder.updateMany(
             {_id: {$in: allFolderIds}},
             {deletedAt: new Date()}
@@ -276,7 +328,7 @@ async function deleteFolder(req,res) {
             await addJob(
                 queueForEvent(EVENTS.FOLDER_TRASHED),
                 EVENTS.FOLDER_TRASHED,
-                {folderId, allFolderIds},
+                {folderId, allFolderIds, actorId: userId, folderName: folder.name, workspaceId: folder.workspaceId},
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_TRASHED, folderId)}
             );
         } catch(jobErr) {
@@ -306,6 +358,9 @@ async function restoreFolder(req,res) {
             }
         }else {
             const workspace = await Workspace.findById(folder.workspaceId);
+            if (!workspace) {
+                return res.status(404).json({ message: "Workspace not found" });
+            }
             const targetMember = workspace.members.find((m) => m.userId.toString() === userId);
             if (!targetMember) {
                 return res.status(403).json({message: "You are not a member of this workspace"});
@@ -336,7 +391,7 @@ async function restoreFolder(req,res) {
         const allFoldersIds = [folder._id.toString(), ...childFolderIds];
 
         try {
-            await axios.put(`${FILE_SERVICE_URL}/api/files/internal/by-folder/restore`,
+            await axios.put(`${FILE_SERVICE_URL}/api/files/internal/by-folders/restore`,
                 {folderIds: allFoldersIds},
                 {headers: {Authorization: req.headers.authorization}}
             );
@@ -354,7 +409,7 @@ async function restoreFolder(req,res) {
             await addJob(
                 queueForEvent(EVENTS.FOLDER_RESTORED),
                 EVENTS.FOLDER_RESTORED,
-                {folderId: folder._id.toString(), allFoldersIds},
+                {folderId: folder._id.toString(), allFoldersIds, actorId: userId, folderName: folder.name, workspaceId: folder.workspaceId},
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_RESTORED, folder._id.toString())}
             );
         } catch(jobErr) {
@@ -437,7 +492,7 @@ async function moveFolder(req,res) {
                 }
                 const targetMember = Ws.members.find((m) => m.userId.toString() === userId);
                 if (!targetMember) {
-                    return res.status(403).json({message: "ou are not a member of the target workspace"});
+                    return res.status(403).json({message: "You are not a member of the target workspace"});
                 }
                 const canUpload = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
                 if (!canUpload) {
@@ -466,7 +521,7 @@ async function moveFolder(req,res) {
             await addJob(
                 queueForEvent(EVENTS.FOLDER_MOVED),
                 EVENTS.FOLDER_MOVED,
-                {folderId: sourceFolder._id.toString(), newParentId, newWorkspaceId: finalWorkspaceId, folder: sourceFolder.toObject()},
+                {folderId: sourceFolder._id.toString(), newParentId, actorId: userId, newWorkspaceId: finalWorkspaceId, folder: sourceFolder.toObject()},
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_MOVED, sourceFolder._id.toString())}
             );
         } catch(jobErr) {
@@ -479,4 +534,4 @@ async function moveFolder(req,res) {
     }
 }
 
-module.exports = {createFolder,renameFolder,deleteFolder,moveFolder,getFolders,getFolderById,restoreFolder};
+module.exports = {createFolder,renameFolder,deleteFolder,moveFolder,getRootItems,getFolderById,restoreFolder};
