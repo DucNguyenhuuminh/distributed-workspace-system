@@ -52,7 +52,7 @@ async function search(req, res) {
 
     const hits = results.ids[0].map((id, i) => ({
       documentId: id,
-      score:      parseFloat((1 - results.distances[0][i]).toFixed(4)),
+      score: results.distances?.[0]?.[i] !== undefined ? parseFloat((1 - results.distances[0][i]).toFixed(4)) : 0,
       preview:    results.documents[0][i]?.slice(0, 200),
       metadata:   results.metadatas[0][i],
     }));

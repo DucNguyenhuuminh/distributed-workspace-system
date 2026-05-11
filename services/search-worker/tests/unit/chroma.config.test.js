@@ -147,7 +147,7 @@ describe('ChromaDB Configuration & Operations', () => {
         ids: [[]], 
         embeddings: [[]], 
         documents: [[]], 
-        metadata: [[]]
+        metadatas: [[]]
       });
     });
   });

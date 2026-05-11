@@ -1,8 +1,9 @@
 require('dotenv').config();
-const express              = require('express');
-const { initCollection }   = require('./config/chroma.config');
+const express = require('express');
+const mongoose = require('mongoose');
+const { initCollection } = require('./config/chroma.config');
 const { startAllConsumers } = require('./consumers');
-const { closeAllWorkers }  = require('shared');
+const { closeAllWorkers } = require('shared');
 const {createBullBoard} = require('@bull-board/api');
 const {BullMQAdapter} = require('@bull-board/api/bullMQAdapter');
 const {ExpressAdapter} = require('@bull-board/express');
@@ -28,6 +29,7 @@ const app = express();
 app.use(express.json());
 
 app.use('/api/search', require('./routes/search.route'));
+app.use('api/notifications', require('./routes/noti.route'));
 app.use('/admin/queues', serverAdapter.getRouter());
 
 app.get('/health', (_, res) =>

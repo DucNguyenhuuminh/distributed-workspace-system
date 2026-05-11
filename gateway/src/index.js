@@ -75,8 +75,8 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`API Gateway is running at http://127.0.0.1: ${PORT}`);
     console.log(`Direct Auth        -> ${services.authService}`);
-    console.log(`Direct Workpace    -> ${services.workspaceService}`);
-    console.log(`Direct Storage     -> ${services.storageService}`);
     console.log(`Direct File        -> ${services.fileService}`);
-    console.log(`Direct Search      -> ${services.searchService}`)
+    console.log(`Direct Workpace    -> ${services.workspaceService}`);
+    console.log(`Direct Search      -> ${services.searchService}`);
+    console.log(`Direct Storage     -> ${services.storageService}`);
 });
