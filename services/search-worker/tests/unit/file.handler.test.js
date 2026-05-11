@@ -1,18 +1,24 @@
 const { fileProcessor } = require('../../src/handlers/file.handler');
 const chromaService = require('../../src/config/chroma.config');
 const extractService = require('../../src/services/extract.service');
+const embedService = require('../../src/services/embed.service'); // Bổ sung để mock
 const { EVENTS } = require('shared');
+
+// 🟢 FIX LỖI CRASH JEST: Mock hoàn toàn embedService để ngăn Jest load @xenova/transformers
+jest.mock('../../src/services/embed.service', () => ({
+  embed: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]) // Giả lập vector AI
+}));
 
 // CHỈ mock các service chức năng bên ngoài
 jest.mock('../../src/config/chroma.config', () => ({
-  upsertDocuments: jest.fn(),
+  upsert: jest.fn(), // Đổi thành upsert theo handler mới
   deleteById: jest.fn()
 }));
 
 jest.mock('../../src/services/extract.service', () => ({
   isSupportedMime: jest.fn(),
   downloadFile: jest.fn(),
-  extractText: jest.fn()
+  extract: jest.fn() // Đổi thành extract theo handler mới
 }));
 
 describe('File Handler Processor', () => {
@@ -46,29 +52,60 @@ describe('File Handler Processor', () => {
   test('✅ FILE_UPLOAD - Bỏ qua nếu extract ra text rỗng', async () => {
     extractService.isSupportedMime.mockReturnValueOnce(true);
     extractService.downloadFile.mockResolvedValueOnce(Buffer.from(''));
-    extractService.extractText.mockResolvedValueOnce(null);
+    extractService.extract.mockResolvedValueOnce(null);
 
     await fileProcessor({ name: EVENTS.FILE_UPLOAD, data: baseJobData });
 
-    expect(chromaService.upsertDocuments).not.toHaveBeenCalled();
+    expect(chromaService.upsert).not.toHaveBeenCalled();
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('No text extracted'));
   });
 
-  test('✅ FILE_UPLOAD - Upsert thành công (cắt gọn text 5000 ký tự)', async () => {
+  test('✅ FILE_UPLOAD - Upsert thành công (cắt 512 char cho embedding, 5000 cho text)', async () => {
     extractService.isSupportedMime.mockReturnValueOnce(true);
     extractService.downloadFile.mockResolvedValueOnce(Buffer.from(''));
     
-    // Giả lập text siêu dài
+    // Giả lập text siêu dài (6000 ký tự)
     const longText = 'a'.repeat(6000);
-    extractService.extractText.mockResolvedValueOnce(longText);
+    extractService.extract.mockResolvedValueOnce(longText);
 
     await fileProcessor({ name: EVENTS.FILE_UPLOAD, data: baseJobData });
 
-    expect(chromaService.upsertDocuments).toHaveBeenCalledWith({
+    // Kiểm tra đúng logic: cắt 512 ký tự cho embedService
+    expect(embedService.embed).toHaveBeenCalledWith('a'.repeat(512));
+
+    // Kiểm tra đúng logic: cắt 5000 ký tự đưa vào ChromaDB
+    expect(chromaService.upsert).toHaveBeenCalledWith({
       id: 'doc-1',
-      document: 'a'.repeat(5000), // Đảm bảo đã cắt đúng 5000 ký tự
+      embedding: [0.1, 0.2, 0.3],
+      document: 'a'.repeat(5000), 
       metadata: { documentId: 'doc-1', workspaceId: 'ws-1', uploadedBy: 'user-1', mimeType: 'application/pdf' }
     });
+  });
+
+  test('✅ FILE_MERGED - Tương tự UPLOAD (Index document)', async () => {
+    extractService.isSupportedMime.mockReturnValueOnce(true);
+    extractService.downloadFile.mockResolvedValueOnce(Buffer.from(''));
+    extractService.extract.mockResolvedValueOnce('Merged Text');
+
+    await fileProcessor({ name: EVENTS.FILE_MERGED, data: baseJobData });
+
+    expect(chromaService.upsert).toHaveBeenCalled();
+  });
+
+  test('✅ FILE_RESTORED - Tương tự UPLOAD (Index document)', async () => {
+    extractService.isSupportedMime.mockReturnValueOnce(true);
+    extractService.downloadFile.mockResolvedValueOnce(Buffer.from(''));
+    extractService.extract.mockResolvedValueOnce('Restored Text');
+
+    await fileProcessor({ name: EVENTS.FILE_RESTORED, data: baseJobData });
+
+    expect(chromaService.upsert).toHaveBeenCalled();
+  });
+
+  test('✅ FILE_RENAMED - Chỉ log, không làm gì thêm', async () => {
+    await fileProcessor({ name: EVENTS.FILE_RENAMED, data: baseJobData });
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('FILE_RENAMED'));
+    expect(chromaService.upsert).not.toHaveBeenCalled();
   });
 
   test('✅ FILE_TRASHED - Xóa document khỏi DB', async () => {
@@ -79,7 +116,7 @@ describe('File Handler Processor', () => {
   test('✅ FILE_MOVED - Xóa bản ghi cũ và index lại bản ghi mới', async () => {
     extractService.isSupportedMime.mockReturnValueOnce(true);
     extractService.downloadFile.mockResolvedValueOnce(Buffer.from(''));
-    extractService.extractText.mockResolvedValueOnce('Valid Text');
+    extractService.extract.mockResolvedValueOnce('Valid Text');
 
     await fileProcessor({ 
       name: EVENTS.FILE_MOVED, 
@@ -87,7 +124,7 @@ describe('File Handler Processor', () => {
     });
 
     expect(chromaService.deleteById).toHaveBeenCalledWith('doc-1');
-    expect(chromaService.upsertDocuments).toHaveBeenCalledWith(expect.objectContaining({
+    expect(chromaService.upsert).toHaveBeenCalledWith(expect.objectContaining({
       metadata: expect.objectContaining({ workspaceId: 'ws-new' }) // Đã trỏ qua workspace mới
     }));
   });

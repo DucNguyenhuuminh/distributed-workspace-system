@@ -11,11 +11,20 @@ const {addJob, queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('
 async function getFiles(req,res) {
     try {
         const userId = req.user.userId;
-        const {workspaceId, folderId} = req.query;
+        let {workspaceId, folderId} = req.query;
+
+        if (workspaceId === "null" || workspaceId === "undefined") workspaceId = null;
+        if (folderId === "null" || folderId === "undefined") folderId = null;
 
         let query = {};
         if (folderId) {
             query.folderId = folderId;
+            if (workspaceId) {
+                query.workspaceId = workspaceId;
+            }else {
+                query.uploadedBy = userId;
+                query.workspaceId = null;
+            }
         }else {
             query.folderId = null;
             if (workspaceId) {
@@ -376,4 +385,176 @@ async function moveFile(req,res) {
     }
 }
 
-module.exports = {getFiles,getFileById,getFileLink,renameFile,deleteFile,restoreFile,moveFile};
+//-------GET /api/files/trash-----------
+async function getTrashedFiles(req,res) {
+    try {
+        const userId = req.user.userId;
+        const {workspaceId} = req.query;
+
+        let query = {deletedAt: {$ne: null}};
+
+        if (workspaceId) {
+            let workspace;
+            const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${workspaceId}`, {
+                headers: {Authorization: req.headers.authorization}
+            });
+            workspace = response.data?.data;
+
+            if (!workspace) {
+                return res.status(404).json({ message: "Workspace not found" });
+            }
+            const member = workspace.members.find((m) => m.userId.toString() === userId);
+            if (!member) {
+                return res.status(403).json({ message: "Không có quyền truy cập" });
+            }
+
+            query.workspaceId = workspaceId;
+        }else {
+            query.uploadedBy = userId;
+            query.workspaceId = null;
+        }
+
+        const files = await Document.find(query)
+                        .setOptions({includeDeleted: true})
+                        .populate('physicalFileId', 'sizeBytes mimeType minioObjectPath')
+                        .sort({deletedAt:-1});
+        
+        return res.json({success: true, data: files});
+    } catch(err) {
+        return res.status(500).json({message: err.message});
+    }
+}
+
+//-------DELETE /api/files/trash/empty-----------
+async function emptyTrash(req, res) {
+  try {
+    const userId = req.user.userId;
+
+    const trashedFiles = await Document.find({
+      uploadedBy:  userId,
+      workspaceId: null,
+      deletedAt:   { $ne: null },
+    }).setOptions({includeDeleted: true}).populate('physicalFileId');
+
+    if (trashedFiles.length === 0) {
+      return res.json({ message: 'Trash is empty' });
+    }
+
+    const fileIds      = trashedFiles.map((f) => f._id.toString());
+    const physicalFiles = trashedFiles.map((f) => f.physicalFileId).filter(Boolean);
+
+    await Document.deleteMany({ _id: { $in: fileIds } }).setOptions({includeDeleted: true});
+    const uniquePhysicalFiles = [
+      ...new Map(physicalFiles.map((pf) => [pf._id.toString(), pf])).values(),
+    ];
+
+    for (const pf of uniquePhysicalFiles) {
+      const usageCount = await Document.countDocuments({ physicalFileId: pf._id }).setOptions({includeDeleted: true});
+      if (usageCount === 0) {
+        await axios.delete(`${STORAGE_SERVICE_URL}/api/storage/file`, {
+          data:    { objectName: pf.minioObjectPath },
+          headers: { Authorization: req.headers.authorization },
+        }).catch((e) => console.error(`[Storage] Error deleting ${pf.minioObjectPath}:`, e.message));
+        await PhysicalFile.findByIdAndDelete(pf._id);
+      }
+    }
+
+    try {
+      await addJob(
+        queueForEvent(EVENTS.FILE_TRASHED),
+        EVENTS.FILE_TRASHED,
+        { fileIds, actorId: userId },
+        { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_TRASHED, `empty-trash-${userId}`) }
+      );
+    } catch (jobErr) {
+      console.error('[Queue Error] emptyTrash:', jobErr.message);
+    }
+
+    return res.json({ message: `Emptied ${fileIds.length} files from trash` });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
+//-------DELETE /api/files/:id/force-----------
+async function forceDeleteFile(req, res) {
+  try {
+    const userId = req.user.userId;
+    const fileId = req.params.id;
+
+    const file = await Document.findById(fileId)
+      .setOptions({ includeDeleted: true })
+      .populate('physicalFileId');
+
+    if (!file) {
+      return res.status(404).json({ message: 'File not exist' });
+    }
+    if (!file.deletedAt) {
+      return res.status(400).json({ message: 'File is not in trash. Move to trash first' });
+    }
+    if (!file.workspaceId) {
+      if (file.uploadedBy.toString() !== userId) {
+        return res.status(403).json({ message: 'You have no permission to force delete this file' });
+      }
+    } else {
+      try {
+        const response = await axios.get(
+          `${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
+          { headers: { Authorization: req.headers.authorization } }
+        );
+        const workspace = response.data?.data;
+        const member    = workspace.members.find((m) => m.userId.toString() === userId);
+        if (!member || member.role !== 'ADMIN') {
+          return res.status(403).json({ message: 'Only Admin can force delete file' });
+        }
+      } catch (err) {
+        if (err.response?.status === 404) {
+          return res.status(404).json({ message: 'Workspace not found' });
+        }
+        return res.status(500).json({ message: 'Cannot connect to workspace-service' });
+      }
+    }
+
+    await Document.findByIdAndDelete(fileId).setOptions({includeDeleted: true});
+    const usageCount = await Document.countDocuments({
+      physicalFileId: file.physicalFileId._id,
+    }).setOptions({includeDeleted: true});
+
+    if (usageCount === 0) {
+      await axios.delete(`${STORAGE_SERVICE_URL}/api/storage/file`, {
+        data:    { objectName: file.physicalFileId.minioObjectPath },
+        headers: { Authorization: req.headers.authorization },
+      }).catch((e) => console.error('[Storage] Skip error:', e.message));
+
+      await PhysicalFile.findByIdAndDelete(file.physicalFileId._id);
+    }
+
+    try {
+      await addJob(
+        queueForEvent(EVENTS.FILE_TRASHED),
+        EVENTS.FILE_TRASHED,
+        { fileIds: [fileId], actorId: userId },
+        { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_TRASHED, fileId) }
+      );
+    } catch (jobErr) {
+      console.error('[Queue Error] forceDeleteFile:', jobErr.message);
+    }
+
+    return res.json({ message: 'File permanently deleted', data: fileId });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
+module.exports = {
+    getFiles,
+    getFileById,
+    getFileLink,
+    renameFile,
+    deleteFile,
+    restoreFile,
+    moveFile, 
+    emptyTrash, 
+    forceDeleteFile, 
+    getTrashedFiles
+};

@@ -30,7 +30,7 @@ async function getAllDescendantIds(rootFolderId) {
     let queue = [rootFolderId];
 
     while(queue.length > 0) {
-        const children = await Folder.find({parentId: {$in: queue}}).setOptions({ignoreSoftDelete: true});
+        const children = await Folder.find({parentId: {$in: queue}}).setOptions({includeDeleted: true});
         const childIds = children.map(c => c._id.toString());
         if (childIds.length === 0) break;
         descendantIds.push(...childIds);
@@ -102,11 +102,11 @@ async function createFolder(req,res) {
     }
 }
 
-//-------GET /api/folders/root/items-----------
-async function getRootItems(req,res) {
+//-------GET /api/folders-----------
+async function getFolders(req,res) {
     try {
         const userId = req.user.userId;
-        const {workspaceId} = req.query;
+        const {workspaceId, parentId} = req.query;
 
         //check exists & permission
         if (workspaceId) {
@@ -120,49 +120,28 @@ async function getRootItems(req,res) {
             }
         }
 
-        let folderQuery = {};
-        let fileQuery = {};
-
-        if (workspaceId) {        
-            folderQuery = {
-                workspaceId,
-                parentId: null,
-                deletedAt: null,
-            };
-            fileQuery = {
-                workspaceId,
-                folderId: null,
-                deletedAt: null,
-            };
+        let query = {};
+        if (parentId) {
+            query.parentId = parentId;
+            if (workspaceId) {
+                query.workspaceId = workspaceId;
+            }else {
+                query.createdBy     = userId;
+                query.workspaceId = null;
+            }
         }else {
-            folderQuery = {
-                createdBy: userId,
-                workspaceId: null,
-                parentId: null,
-                deletedAt:null,
-            };
-            fileQuery = {
-                uploadedBy: userId,
-                workspaceId: null,
-                folderId: null,
-                deletedAt: null,
-            };
+            if (workspaceId) {
+                query.workspaceId = workspaceId;
+                query.parentId    = null;
+            } else {
+                query.createdBy     = userId;
+                query.workspaceId = null;
+                query.parentId    = null;
+            }
         }
 
-        const folders = await Folder.find(folderQuery);
-
-        let files = [];
-        try {
-            const response = await axios.get(`${FILE_SERVICE_URL}/api/files/internal/by-folders/getFiles`, {
-                params: fileQuery,
-                headers: {Authorization: req.headers.authorization},
-            });
-
-            files = response.data?.data;
-        } catch(err) {
-            console.error("File service error:",err.response?.data || err.message);
-        }
-        return res.json({folders, files});
+        const folders = await Folder.find(query);
+        return res.json({data: folders});
     } catch(err) {
         return res.status(500).json({message: err.message});
     }
@@ -196,10 +175,9 @@ async function getFolderById(req,res) {
         // 3. Query lấy danh sách thư mục con (sub-folders)
         const folders = await Folder.find({
             parentId: folderId,
-            deletedAt: null // Không lấy các folder đã xoá
+            deletedAt: null
         });
 
-        // 4. Query lấy danh sách file thông qua File Service nội bộ
         let files = [];
         try {
             const response = await axios.get(`${FILE_SERVICE_URL}/api/files/internal/by-folders/getFiles`, {
@@ -210,11 +188,11 @@ async function getFolderById(req,res) {
                 headers: { Authorization: req.headers.authorization },
             });
             files = response.data?.data || [];
-        } catch(err) {
-            console.error("File service error:", err.response?.data || err.message);
+        } catch(err){
+            console.error("[workspace-service] Error while call File Service get files:", err.message);
+            return res.status(500).json({message: "Error system when get all the files"});
         }
-
-        // 5. Lấy breadcrumb
+            
         const breadcrumb = await getBreadcrumbPath(folderId);
 
         // Trả về tất cả trong 1 response
@@ -314,11 +292,16 @@ async function deleteFolder(req,res) {
                 return res.status(403).json({message: "No permission to modify folder in this workspace"});
             }
         }
-
-        await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders`, {
-            data: { folderIds: allFolderIds },
-            headers: { Authorization: req.headers.authorization }
-        });
+        try {
+            await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders`, {
+                data: { folderIds: allFolderIds },
+                headers: { Authorization: req.headers.authorization }
+            });
+        } catch(err) {
+            console.error("[workspace-service] Error while call File Service delete file:", err.message);
+            return res.status(500).json({message: "Error system when delete all the files"});
+        }
+        
         await Folder.updateMany(
             {_id: {$in: allFolderIds}},
             {deletedAt: new Date()}
@@ -397,7 +380,7 @@ async function restoreFolder(req,res) {
             );
         } catch(err) {
             console.error("[workspace-service] Error while call File Service restore file:", err.message);
-            return res.status(500).json({message: "Error system when restore all sub folders"});
+            return res.status(500).json({message: "Error system when restore all sub-folders"});
         }
 
         await Folder.updateMany(
@@ -534,4 +517,161 @@ async function moveFolder(req,res) {
     }
 }
 
-module.exports = {createFolder,renameFolder,deleteFolder,moveFolder,getRootItems,getFolderById,restoreFolder};
+//-------GET /api/folders/trash-----------
+async function getTrashedFolders(req, res) {
+    try {
+        const userId = req.user.userId;
+        const { workspaceId } = req.query;
+
+        let query = { deletedAt: { $ne: null } };
+
+        if (workspaceId) {
+            const workspace = await Workspace.findById(workspaceId);
+            if (!workspace) {
+                return res.status(404).json({ message: "Workspace not found" });
+            }
+            const member = workspace.members.find((m) => m.userId.toString() === userId);
+            if (!member) {
+                return res.status(403).json({ message: "Không có quyền truy cập" });
+            }
+
+            query.workspaceId = workspaceId;
+        } else {
+            query.createdBy = userId;
+            query.workspaceId = null;
+        }
+
+        const trashedFolders = await Folder.find(query).setOptions({includeDeleted: true}).sort({ deletedAt: -1 });
+        return res.json({ success: true, data: trashedFolders });
+
+    } catch(err) {
+        return res.status(500).json({ message: err.message });
+    }
+}
+
+//-------DELETE /api/folders/trash/empty-----------
+async function emptyTrashFolder(req, res) {
+  try {
+    const userId = req.user.userId;
+
+    const trashedFolders = await Folder.find({
+      createdBy:   userId,
+      workspaceId: null,
+      deletedAt:   { $ne: null },
+    }).setOptions({ includeDeleted: true });
+
+    if (trashedFolders.length === 0) {
+      return res.json({ message: 'Trash is empty' });
+    }
+
+    let allFolderIds = [];
+    for (const f of trashedFolders) {
+      const descendants = await getAllDescendantIds(f._id);
+      allFolderIds.push(f._id.toString(), ...descendants);
+    }
+    allFolderIds = [...new Set(allFolderIds)];
+
+    try {
+      await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders/force`, {
+          data:    { folderIds: allFolderIds },
+          headers: { Authorization: req.headers.authorization },
+        }
+      );
+    } catch (err) {
+        console.error("[workspace-service] Error while call File Service clean the files:", err.message);
+        return res.status(500).json({message: "Error system when cleaning all the files"});
+    }
+    await Folder.deleteMany({ _id: { $in: allFolderIds } });
+
+    try {
+      await addJob(
+        queueForEvent(EVENTS.FOLDER_TRASHED),
+        EVENTS.FOLDER_TRASHED,
+        { allFolderIds, actorId: userId },
+        { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_TRASHED, `empty-folder-trash-${userId}`) }
+      );
+    } catch (jobErr) {
+      console.error('[Queue Error] emptyTrashFolder:', jobErr.message);
+    }
+
+    return res.json({ message: `Emptied ${trashedFolders.length} folders from trash` });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
+//-------DELETE /api/folders/trash/:id/force-----------
+async function forceDeleteFolder(req, res) {
+  try {
+    const userId   = req.user.userId;
+    const folderId = req.params.id;
+
+    const folder = await Folder.findById(folderId)
+      .setOptions({ includeDeleted: true });
+
+    if (!folder) {
+      return res.status(404).json({ message: 'Folder not found' });
+    }
+    if (!folder.deletedAt) {
+      return res.status(400).json({ message: 'Folder is not in trash. Move to trash first' });
+    }
+    if (!folder.workspaceId) {
+      if (folder.createdBy.toString() !== userId) {
+        return res.status(403).json({ message: 'No permission to force delete this folder' });
+      }
+    } else {
+      const workspace = await Workspace.findById(folder.workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ message: 'Workspace not found' });
+      }
+      const member = workspace.members.find((m) => m.userId.toString() === userId);
+      if (!member || member.role !== 'ADMIN') {
+        return res.status(403).json({ message: 'Only Admin can force delete folder' });
+      }
+    }
+
+    const childFolderIds = await getAllDescendantIds(folderId);
+    const allFolderIds   = [folderId, ...childFolderIds];
+
+    try {
+      await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders/force`, {
+          data:    { folderIds: allFolderIds },
+          headers: { Authorization: req.headers.authorization },
+        }
+      );
+    } catch (err) {
+        console.error("[workspace-service] Error while call File Service force force file:", err.message);
+        return res.status(500).json({message: "Error system when force delete file"});
+    }
+
+    await Folder.deleteMany({ _id: { $in: allFolderIds } });
+
+    try {
+      await addJob(
+        queueForEvent(EVENTS.FOLDER_TRASHED),
+        EVENTS.FOLDER_TRASHED,
+        { allFolderIds, actorId: userId },
+        { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_TRASHED, folderId) }
+      );
+    } catch (jobErr) {
+      console.error('[Queue Error] forceDeleteFolder:', jobErr.message);
+    }
+
+    return res.json({ message: 'Folder permanently deleted' });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
+module.exports = {
+    createFolder,
+    renameFolder,
+    deleteFolder,
+    moveFolder,
+    getFolders,
+    getFolderById,
+    restoreFolder, 
+    getTrashedFolders, 
+    forceDeleteFolder, 
+    emptyTrashFolder
+};

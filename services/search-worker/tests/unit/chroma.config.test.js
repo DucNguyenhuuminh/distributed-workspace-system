@@ -14,8 +14,6 @@ jest.mock('chromadb', () => {
     ChromaClient: jest.fn().mockImplementation(() => ({
       getOrCreateCollection: mockGetOrCreateCollection,
     })),
-    DefaultEmbeddingFunction: jest.fn(),
-    
     // Export ngầm các mock này ra ngoài để bài test có thể kiểm tra (expect)
     __mockCollection: mockCollection, 
     __mockGetOrCreateCollection: mockGetOrCreateCollection
@@ -56,8 +54,7 @@ describe('ChromaDB Configuration & Operations', () => {
       expect(collection).toBeDefined();
       expect(mockGetOrCreate).toHaveBeenCalledWith({
         name: 'documents',
-        embeddingFunction: expect.any(Object),
-        metadata: { 'hnsw:space': 'cosine' },
+        metadata: { 'hnsw:space': 'cosine' }, // 🟢 Đã bỏ embeddingFunction cho khớp logic thực tế
       });
       expect(console.log).toHaveBeenCalledWith('[ChromaDB] Collection "documents" ready');
     });
@@ -84,12 +81,14 @@ describe('ChromaDB Configuration & Operations', () => {
       await chromaConfig.initCollection();
     });
 
-    test('✅ upsertDocuments: Gửi đúng định dạng mảng', async () => {
-      const payload = { id: 'doc-123', document: 'Hello AI', metadata: { source: 'pdf' } };
-      await chromaConfig.upsertDocuments(payload);
+    test('✅ upsert: Gửi đúng định dạng mảng (Gồm cả embedding)', async () => {
+      // 🟢 Đổi tên hàm thành upsert, thêm thuộc tính embedding
+      const payload = { id: 'doc-123', embedding: [0.1, 0.2, 0.3], document: 'Hello AI', metadata: { source: 'pdf' } };
+      await chromaConfig.upsert(payload);
 
       expect(mockCollection.upsert).toHaveBeenCalledWith({
         ids: ['doc-123'],
+        embeddings: [[0.1, 0.2, 0.3]],
         documents: ['Hello AI'],
         metadatas: [{ source: 'pdf' }],
       });
@@ -109,14 +108,15 @@ describe('ChromaDB Configuration & Operations', () => {
       // Giả lập kết quả trả về từ ChromaDB
       mockCollection.query.mockResolvedValueOnce({ ids: [['doc-result']] });
       
+      // 🟢 Sửa tham số text thành embedding
       const result = await chromaConfig.query({ 
-        text: 'Tìm kiếm', 
+        embedding: [0.5, 0.6], 
         nResults: 5, 
         where: { workspaceId: 'ws-abc' } 
       });
       
       expect(mockCollection.query).toHaveBeenCalledWith({
-        queryTexts: ['Tìm kiếm'],
+        queryEmbeddings: [[0.5, 0.6]], // Đổi từ queryTexts sang queryEmbeddings
         nResults: 5,
         where: { workspaceId: 'ws-abc' },
       });
@@ -124,12 +124,30 @@ describe('ChromaDB Configuration & Operations', () => {
     });
 
     test('✅ query: Xử lý an toàn tham số mặc định (KHÔNG truyền where, nResults)', async () => {
-      await chromaConfig.query({ text: 'Tìm kiếm mặc định' }); 
+      mockCollection.query.mockResolvedValueOnce({ ids: [['doc-result']] });
+      
+      // 🟢 Chỉ truyền embedding, bỏ where và nResults
+      await chromaConfig.query({ embedding: [0.1, 0.2] }); 
       
       expect(mockCollection.query).toHaveBeenCalledWith({
-        queryTexts: ['Tìm kiếm mặc định'],
+        queryEmbeddings: [[0.1, 0.2]],
         nResults: 10, // nResults phải nhận giá trị mặc định là 10
         where: undefined, // where tự động fallback về undefined
+      });
+    });
+
+    test('✅ query: Bắt lỗi an toàn nếu collection rỗng (no embeddings / no documents)', async () => {
+      // Giả lập ChromaDB ném ra lỗi Collection rỗng
+      mockCollection.query.mockRejectedValueOnce(new Error('no embeddings present'));
+      
+      const result = await chromaConfig.query({ embedding: [0.1, 0.2] }); 
+      
+      // Đảm bảo nhánh catch hoạt động trả về mảng rỗng thay vì throw error
+      expect(result).toEqual({
+        ids: [[]], 
+        embeddings: [[]], 
+        documents: [[]], 
+        metadata: [[]]
       });
     });
   });

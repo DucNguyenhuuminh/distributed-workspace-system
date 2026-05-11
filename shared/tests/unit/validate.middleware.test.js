@@ -1,5 +1,5 @@
 const { validationResult } = require('express-validator');
-const { validateRequest } = require('../middlewares/validate.middleware');
+const { validateRequest } = require('../../middlewares/validate.middleware');
 
 // Mock thư viện express-validator
 jest.mock('express-validator', () => ({

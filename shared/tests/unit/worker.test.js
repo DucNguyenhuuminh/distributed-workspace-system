@@ -16,12 +16,12 @@ jest.mock('bullmq', () => {
 });
 
 // Mock queueProducer để tránh kết nối Redis thật
-jest.mock('../queue/queueProducer', () => ({
+jest.mock('../../queue/queueProducer', () => ({
   connection: { status: 'ready' },
 }));
 
 const { Worker } = require('bullmq');
-const { createWorker, closeAllWorkers } = require('../queue/queueWorker');
+const { createWorker, closeAllWorkers } = require('../../queue/queueWorker');
 
 afterEach(() => {
   jest.clearAllMocks();

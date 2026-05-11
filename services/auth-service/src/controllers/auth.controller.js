@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/auth.model');
-const { addJob, queueForEvent, jobIdFor, DEFAULT_JOB_OPTIONS } = require('shared');
+const { addJob, queueForEvent, jobIdFor, DEFAULT_JOB_OPTIONS, EVENTS } = require('shared');
 
 //-------POST /api/auth/register-----------
 async function register (req,res) {

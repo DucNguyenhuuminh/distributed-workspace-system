@@ -1,10 +1,16 @@
 // ── 1. Mock External Boundaries ───────────────────────────────
 const axios = require('axios');
 const chromaService = require('../../src/config/chroma.config');
+const embedService = require('../../src/services/embed.service'); // Import để mock
 
 jest.mock('axios');
 jest.mock('../../src/config/chroma.config', () => ({
   query: jest.fn()
+}));
+
+// 🟢 FIX LỖI CRASH JEST: Mock hoàn toàn embedService để ngăn Jest load @xenova/transformers
+jest.mock('../../src/services/embed.service', () => ({
+  embed: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]) // Giả lập trả về một vector AI bất kỳ
 }));
 
 const request = require('supertest');
@@ -23,7 +29,6 @@ function createApp() {
     next();
   });
 
-  // Gắn route
   app.get('/api/search', search);
   return app;
 }
@@ -52,6 +57,7 @@ describe('[Integration] GET /api/search', () => {
     
     expect(res.status).toBe(400);
     expect(res.body.message).toBe('Câu hỏi tìm kiếm là bắt buộc');
+    expect(embedService.embed).not.toHaveBeenCalled();
     expect(chromaService.query).not.toHaveBeenCalled();
   });
 
@@ -96,6 +102,7 @@ describe('[Integration] GET /api/search', () => {
     const res = await request(app).get('/api/search?q=NoResult');
 
     expect(res.status).toBe(200);
+    expect(res.body.message).toBe('Search successfully');
     expect(res.body.data.total).toBe(0);
     expect(res.body.data.results).toEqual([]);
     expect(axios.get).not.toHaveBeenCalled(); // Đảm bảo File Service không bị gọi thừa
@@ -123,6 +130,7 @@ describe('[Integration] GET /api/search', () => {
     const res = await request(app).get('/api/search?q=Test');
 
     expect(res.status).toBe(200);
+    expect(res.body.message).toBe('Search successfully');
     expect(res.body.data.total).toBe(2);
     
     // Kiểm tra cấu trúc Data gộp (Enrich)
@@ -136,14 +144,14 @@ describe('[Integration] GET /api/search', () => {
   });
 
   test('✅ Tìm kiếm Workspace: Pass quyền WS + Graceful Degradation khi File Service sập → 200', async () => {
-    // Xây dựng Smart Mock cho Axios để phản hồi theo URL
+    // 🟢 SỬA LẠI: Phân luồng Axios Mock để xử lý cả Workspace Service và File Service
     axios.get.mockImplementation(async (url) => {
       if (url.includes('/api/workspaces/')) {
         // Pass quyền Workspace
         return { data: { data: { members: [{ userId: 'user-001' }] } } };
       }
-      if (url.includes('/api/files/')) {
-        // Đánh sập File Service để test nhánh catch
+      if (url.includes('/api/files/internal/by-searching')) {
+        // Đánh sập File Service để test nhánh catch fallback
         throw new Error('File Service is dead');
       }
     });
@@ -155,11 +163,16 @@ describe('[Integration] GET /api/search', () => {
 
     const res = await request(app).get('/api/search?q=Graceful&workspaceId=ws-123');
 
-    // 🟢 API vẫn phải trả về 200 dù File Service sập (Fallback data thô từ ChromaDB)
+    // API vẫn phải trả về 200 dù File Service sập (Fallback data thô từ ChromaDB)
     expect(res.status).toBe(200);
+    expect(res.body.message).toBe('Search successfully');
     expect(res.body.data.total).toBe(1);
     expect(res.body.data.results[0].documentId).toBe('doc-1');
-    expect(res.body.data.results[0].document).toBeUndefined(); // Không có data từ file service
+    
+    // 🟢 SỬA LẠI: Đổi thành toBeUndefined() vì mảng hits gốc không có key document
+    expect(res.body.data.results[0].document).toBeUndefined(); 
+    
+    // Đảm bảo logger đã ghi nhận lỗi
     expect(console.error).toHaveBeenCalledWith('[Search] Cannot enrich with file-service:', 'File Service is dead');
   });
 

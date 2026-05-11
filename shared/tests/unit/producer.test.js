@@ -22,7 +22,7 @@ jest.mock('ioredis', () => {
 });
 
 const { Queue }    = require('bullmq');
-const { addJob, getQueue, closeAll, connection } = require('../queue/queueProducer');
+const { addJob, getQueue, closeAll, connection } = require('../../queue/queueProducer');
 
 afterEach(() => {
   jest.clearAllMocks();

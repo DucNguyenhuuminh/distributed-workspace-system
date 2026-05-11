@@ -228,4 +228,55 @@ async function removeMember(req,res) {
     }
 }
 
-module.exports = {createWorkspace, addMember, getWorkspaceById, getWorkspaces, removeMember, deleteWorkspace};
+//-------PUT /api/workspaces/:id/members/:targetUserId/permission-----------
+async function setUserPermission(req,res) {
+    try {
+        const adminId = req.user.userId;
+        const workspaceId = req.params.id;
+        const targetUserId = req.params.targetUserId;
+        const {permissions} = req.body;
+
+        //check permission & exists
+        const workspace = await Workspace.findById(workspaceId);
+        if (!workspace) {
+            return res.status(400).json({message: "Workspace not exist"})
+        }
+        const targetMember = workspace.members.find((m) => m.userId.toString() === targetUserId);
+        if (!targetMember) {
+            return res.status(400).json({message: "Member not in this workspace"});
+        }
+        const member = workspace.members.find((m) => m.userId.toString() === adminId);
+        if (!member || member.role !== "ADMIN") {
+            return res.status(403).json({message: "You are not an Admin to set permission"});
+        }
+        if (permissions) {
+            targetMember.permissions = permissions;
+        }
+        await workspace.save();
+
+        try {
+            await addJob(
+                queueForEvent(EVENTS.MEMBER_PERMISSION),
+                EVENTS.MEMBER_PERMISSION,
+                {workspaceId: workspace._id.toString(), workspaceName: workspace.name, targetUserId: targetUserId, actorId: adminId, newPermissions: targetMember.permissions},
+                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_PERMISSION, `${workspaceId}:${targetUserId}-${Date.now()}`)}
+            );
+        } catch(jobErr) {
+            console.error('Queue Error] Failed to enqueue MEMBER_REMOVED job', jobErr);
+        }
+
+        return res.json({message: "Set permission successfully", data: workspace});
+    } catch(err) {
+        return res.status(500).json({message: err.message});
+    }
+}
+
+module.exports = {
+    createWorkspace, 
+    addMember, 
+    getWorkspaceById, 
+    getWorkspaces, 
+    removeMember, 
+    deleteWorkspace, 
+    setUserPermission
+};

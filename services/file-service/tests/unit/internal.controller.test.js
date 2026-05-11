@@ -1,11 +1,45 @@
 // ── 1. Mock Database Models ────────────────────────────
-jest.mock('../../src/models/documents.model', () => require('./mocks/models.mock').DocumentMock);
-jest.mock('../../src/models/physical-file.model', () => require('./mocks/models.mock').PhysicalFileMock);
+jest.mock('axios');
+jest.mock('shared', () => ({
+  addJob: jest.fn().mockResolvedValue({ id: 'job-mock' }),
+  queueForEvent: jest.fn((e) => `queue:${e}`),
+  jobIdFor: jest.fn((e, id) => `${e}:${id}`),
+  EVENTS: { FILE_TRASHED: 'file.trashed' },
+  DEFAULT_JOB_OPTIONS: { attempts: 3 }
+}));
+
+// Mock Document model
+jest.mock('../../src/models/documents.model', () => {
+  const mock = {
+    find: jest.fn(),
+    updateMany: jest.fn(),
+    deleteMany: jest.fn(),      // 🟢 Đảm bảo khởi tạo hàm mock
+    countDocuments: jest.fn(),  // 🟢 Đảm bảo khởi tạo hàm mock
+    findByIdAndDelete: jest.fn()
+  };
+  return mock;
+});
+
+// Mock PhysicalFile model
+jest.mock('../../src/models/physical-file.model', () => ({
+  findByIdAndDelete: jest.fn()
+}));
 
 const request = require('supertest');
 const express = require('express');
-const { DocumentMock: Document } = require('./mocks/models.mock');
+const axios = require('axios');
+const Document = require('../../src/models/documents.model'); // Lấy trực tiếp từ mock trên
+const PhysicalFile = require('../../src/models/physical-file.model');
 const internalController = require('../../src/controllers/internal.controller');
+
+// 🟢 Bảo bối smartQuery (Bắt buộc để không lỗi .setOptions)
+const smartQuery = (data) => {
+  const query = Promise.resolve(data);
+  query.populate = jest.fn().mockReturnValue(query);
+  query.sort = jest.fn().mockReturnValue(query);
+  query.setOptions = jest.fn().mockReturnValue(query);
+  return query;
+};
 
 // ── 2. Cài đặt App giả lập để test ──────────────────────────
 function createApp() {
@@ -16,12 +50,13 @@ function createApp() {
   app.delete('/api/files/internal/by-workspace/:id', internalController.deletedByWorkspace);
   app.delete('/api/files/internal/by-folders', internalController.deletedByFolders);
   app.put('/api/files/internal/by-folders/restore', internalController.restoreByFolders);
+  // Đừng quên route này cho function mới
+  app.delete('/api/files/internal/by-folders/force', internalController.forceDeleteFilesByFolders);
 
   return app;
 }
 
 beforeAll(() => {
-  // Ẩn console.error nếu hệ thống của bạn có log lỗi 500 ra terminal
   jest.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -30,7 +65,6 @@ afterAll(() => {
 });
 
 afterEach(() => {
-  // Clear mock data sau mỗi test case để tránh State Mutation
   jest.clearAllMocks();
 });
 
@@ -191,5 +225,119 @@ describe('PUT /api/files/internal/by-folders/restore', () => {
 
     expect(res.status).toBe(500);
     expect(res.body.message).toBe('Mongoose Error');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// DELETE /api/files/internal/by-folders/force
+// ═══════════════════════════════════════════════════════════
+describe('DELETE /api/files/internal/by-folders/force', () => {
+  const app = createApp();
+
+  test('✅ Xóa vĩnh viễn (usageCount = 0) → Cập nhật Storage & DB → 200', async () => {
+    const mockFile = { 
+      _id: 'doc-1', 
+      physicalFileId: { _id: 'pf-1', minioObjectPath: 'test.pdf' } 
+    };
+    
+    // Hàm find có .populate() nên phải dùng smartQuery
+    Document.find.mockReturnValue(smartQuery([mockFile]));
+    Document.deleteMany.mockResolvedValue({ deletedCount: 1 });
+    Document.countDocuments.mockResolvedValue(0); 
+    axios.delete.mockResolvedValue({});
+    PhysicalFile.findByIdAndDelete.mockResolvedValue({});
+
+    const res = await request(app)
+      .delete('/api/files/internal/by-folders/force')
+      .send({ folderIds: ['folder-1'] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe('Force deleted 1 files');
+    expect(Document.deleteMany).toHaveBeenCalledWith({ _id: { $in: ['doc-1'] } });
+    expect(axios.delete).toHaveBeenCalledWith(
+      expect.stringContaining('/api/storage/file'),
+      expect.any(Object)
+    );
+    expect(PhysicalFile.findByIdAndDelete).toHaveBeenCalledWith('pf-1');
+  });
+
+  test('✅ Xóa file nhưng Physical File đang được dùng (usageCount > 0) → KHÔNG xóa Storage', async () => {
+    const mockFile = { 
+      _id: 'doc-1', 
+      physicalFileId: { _id: 'pf-1', minioObjectPath: 'test.pdf' } 
+    };
+    
+    Document.find.mockReturnValue(smartQuery([mockFile]));
+    Document.deleteMany.mockResolvedValue({ deletedCount: 1 });
+    Document.countDocuments.mockResolvedValue(1); // Có file khác đang dùng
+
+    const res = await request(app)
+      .delete('/api/files/internal/by-folders/force')
+      .send({ folderIds: ['folder-1'] });
+
+    expect(res.status).toBe(200);
+    expect(Document.deleteMany).toHaveBeenCalled();
+    expect(axios.delete).not.toHaveBeenCalled(); // Storage an toàn
+    expect(PhysicalFile.findByIdAndDelete).not.toHaveBeenCalled();
+  });
+
+  test('✅ Thư mục không có file nào để xóa → 200', async () => {
+    Document.find.mockReturnValue(smartQuery([])); // DB trả về mảng rỗng
+
+    const res = await request(app)
+      .delete('/api/files/internal/by-folders/force')
+      .send({ folderIds: ['folder-1'] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe('No files to clean in these folders');
+    expect(Document.deleteMany).not.toHaveBeenCalled();
+  });
+
+  test('✅ Storage lỗi nhưng vẫn nuốt lỗi và tiếp tục → 200', async () => {
+    const mockFile = { 
+      _id: 'doc-1', 
+      physicalFileId: { _id: 'pf-1', minioObjectPath: 'test.pdf' } 
+    };
+    
+    Document.find.mockReturnValue(smartQuery([mockFile]));
+    Document.deleteMany.mockResolvedValue({ deletedCount: 1 });
+    Document.countDocuments.mockResolvedValue(0);
+    // Giả lập Axios sập
+    axios.delete.mockRejectedValue(new Error('Storage Timeout')); 
+
+    const res = await request(app)
+      .delete('/api/files/internal/by-folders/force')
+      .send({ folderIds: ['folder-1'] });
+
+    expect(res.status).toBe(200);
+    expect(PhysicalFile.findByIdAndDelete).toHaveBeenCalledWith('pf-1'); // Vẫn xóa record ở bảng PhysicalFile
+  });
+
+  test('❌ Không truyền folderIds → 400', async () => {
+    const res = await request(app)
+      .delete('/api/files/internal/by-folders/force')
+      .send({}); // Rỗng
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Require list of folder ids');
+  });
+
+  test('❌ folderIds là mảng rỗng → 400', async () => {
+    const res = await request(app)
+      .delete('/api/files/internal/by-folders/force')
+      .send({ folderIds: [] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Require list of folder ids');
+  });
+
+  test('❌ Lỗi DB (Crash) → 500', async () => {
+    Document.find.mockImplementation(() => { throw new Error('DB Crash'); });
+
+    const res = await request(app)
+      .delete('/api/files/internal/by-folders/force')
+      .send({ folderIds: ['folder-1'] });
+
+    expect(res.status).toBe(500);
   });
 });

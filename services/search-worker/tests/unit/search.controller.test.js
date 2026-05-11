@@ -6,6 +6,10 @@ jest.mock('axios');
 jest.mock('../../src/config/chroma.config', () => ({
   query: jest.fn()
 }));
+jest.mock('../../src/services/embed.service', () => ({
+  embed: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]) 
+}));
+
 
 const { search } = require('../../src/controllers/search.controller');
 

@@ -5,7 +5,7 @@ const {
   DEFAULT_JOB_OPTIONS,
   queueForEvent,
   jobIdFor,
-} = require('../queue/queue.config');
+} = require('../../queue/queue.config');
 
 // ═══════════════════════════════════════════════════════════
 // QUEUES constants
@@ -156,46 +156,50 @@ describe('queueForEvent()', () => {
 // jobIdFor()
 // ═══════════════════════════════════════════════════════════
 describe('jobIdFor()', () => {
-  test('✅ Có entityId → format event:entityId', () => {
-    expect(jobIdFor('file.uploaded', 'abc-123')).toBe('file.uploaded:abc-123');
+  test('✅ Có entityId → format event_entityId', () => {
+    // Sửa kỳ vọng từ ':' thành '_' và thay '.' bằng '_'
+    expect(jobIdFor('file.uploaded', 'abc-123')).toBe('file_uploaded_abc-123');
     expect(jobIdFor('workspace.created', '648000000000000000000001'))
-      .toBe('workspace.created:648000000000000000000001');
+      .toBe('workspace_created_648000000000000000000001');
   });
 
   test('✅ entityId là số → convert sang string', () => {
     const result = jobIdFor('folder.created', 42);
-    expect(result).toBe('folder.created:42');
+    expect(result).toBe('folder_created_42');
   });
 
   test('✅ entityId là ObjectId-like string', () => {
     const result = jobIdFor(EVENTS.FILE_UPLOAD, '507f1f77bcf86cd799439011');
-    expect(result).toBe('file.uploaded:507f1f77bcf86cd799439011');
+    expect(result).toBe('file_uploaded_507f1f77bcf86cd799439011');
   });
 
-  test('✅ Không có entityId → format event:timestamp', () => {
+  test('✅ Không có entityId → format event_timestamp', () => {
     const before = Date.now();
     const result = jobIdFor('file.uploaded');
     const after  = Date.now();
 
-    expect(result.startsWith('file.uploaded:')).toBe(true);
-    const timestamp = parseInt(result.split(':')[1]);
+    // Sửa kỳ vọng kiểm tra chuỗi bắt đầu
+    expect(result.startsWith('file_uploaded_')).toBe(true);
+    
+    // Do chuỗi là 'file_uploaded_timestamp', khi split('_') thì timestamp nằm ở index 2
+    const timestamp = parseInt(result.split('_')[2]);
     expect(timestamp).toBeGreaterThanOrEqual(before);
     expect(timestamp).toBeLessThanOrEqual(after);
   });
 
   test('✅ entityId là null → dùng timestamp', () => {
     const result = jobIdFor('file.uploaded', null);
-    expect(result.startsWith('file.uploaded:')).toBe(true);
+    expect(result.startsWith('file_uploaded_')).toBe(true);
   });
 
   test('✅ entityId là undefined → dùng timestamp', () => {
     const result = jobIdFor('file.uploaded', undefined);
-    expect(result.startsWith('file.uploaded:')).toBe(true);
+    expect(result.startsWith('file_uploaded_')).toBe(true);
   });
 
   test('✅ entityId là empty string → dùng timestamp (falsy)', () => {
     const result = jobIdFor('file.uploaded', '');
-    expect(result.startsWith('file.uploaded:')).toBe(true);
+    expect(result.startsWith('file_uploaded_')).toBe(true);
   });
 
   test('✅ 2 lần gọi không có entityId → timestamp khác nhau', async () => {

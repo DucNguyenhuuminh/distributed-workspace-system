@@ -1,5 +1,6 @@
 const axios         = require('axios');
 const chromaService = require('../config/chroma.config');
+const embedService = require('../services/embed.service');
 
 //-------- GET /api/search/---------------
 async function search(req, res) {
@@ -13,9 +14,8 @@ async function search(req, res) {
 
     if (workspaceId) {
       try {
-        const wsRes   = await axios.get(
-          `${process.env.WORKSPACE_SERVICE_URL}/api/workspaces/${workspaceId}`,
-          { headers: { Authorization: req.headers.authorization } }
+        const wsRes   = await axios.get(`${process.env.WORKSPACE_SERVICE_URL}/api/workspaces/${workspaceId}`, { 
+          headers: { Authorization: req.headers.authorization } }
         );
         const isMember = wsRes.data.data.members.some(
           (m) => m.userId.toString() === userId
@@ -31,12 +31,14 @@ async function search(req, res) {
       }
     }
 
+    const embedding = await embedService.embed(q);
+
     const where = workspaceId
       ? { workspaceId }
       : { uploadedBy: userId };
 
     const results = await chromaService.query({
-      text:     q,  
+      embedding ,  
       nResults: 10,
       where,
     });
@@ -48,7 +50,6 @@ async function search(req, res) {
       });
     }
 
-    // Format kết quả
     const hits = results.ids[0].map((id, i) => ({
       documentId: id,
       score:      parseFloat((1 - results.distances[0][i]).toFixed(4)),
@@ -58,9 +59,7 @@ async function search(req, res) {
 
     try {
       const ids     = hits.map((h) => h.documentId).join(',');
-      const fileRes = await axios.get(
-        `${process.env.FILE_SERVICE_URL}/api/files/internal/by-searching`,
-        { params: { ids } }
+      const fileRes = await axios.get(`${process.env.FILE_SERVICE_URL}/api/files/internal/by-searching`, { params: { ids } }
       );
 
       const docMap = {};
@@ -68,7 +67,6 @@ async function search(req, res) {
         docMap[doc._id.toString()] = doc;
       });
 
-      // Merge ChromaDB result với MongoDB data
       const enrichedHits = hits.map((hit) => ({
         ...hit,
         document: docMap[hit.documentId] || null,

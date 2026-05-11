@@ -613,3 +613,120 @@ describe('DELETE /api/workspaces/:id/members/:targetUserId', () => {
     expect(res.status).toBe(500);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// PUT /api/workspaces/:id/members/:targetUserId/permissions — setUserPermission
+// ═══════════════════════════════════════════════════════════
+describe('PUT /api/workspaces/:id/members/:targetUserId/permission', () => {
+  const app = createApp();
+
+  test('✅ Cập nhật quyền thành công → 200', async () => {
+    const ws = getFreshWorkspace();
+    // Cấu hình user-001 là ADMIN, user-002 là MEMBER
+    ws.members = [
+      { userId: { toString: () => 'user-001' }, role: 'ADMIN' },
+      { userId: { toString: () => 'user-002' }, role: 'MEMBER', permissions: 'viewer' }
+    ];
+    Workspace.findById.mockResolvedValue(ws);
+
+    const newPermissions = 'editor';
+    
+    // 🟢 Đã fix: Gửi đúng định dạng Object JSON
+    const res = await request(app)
+      .put(`/api/workspaces/${ws._id}/members/user-002/permission`)
+      .send({ permissions: newPermissions });
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe('Set permission successfully');
+    
+    // Kiểm tra data được cập nhật đúng
+    const targetMember = ws.members.find(m => m.userId.toString() === 'user-002');
+    expect(targetMember.permissions).toBe(newPermissions);
+    
+    expect(ws.save).toHaveBeenCalled();
+    expect(addJob).toHaveBeenCalled();
+  });
+
+  test('✅ BullMQ lỗi không ảnh hưởng response — vẫn trả 200', async () => {
+    const ws = getFreshWorkspace();
+    ws.members = [
+      { userId: { toString: () => 'user-001' }, role: 'ADMIN' },
+      { userId: { toString: () => 'user-002' }, role: 'MEMBER', permissions: 'viewer' }
+    ];
+    Workspace.findById.mockResolvedValue(ws);
+    addJob.mockRejectedValueOnce(new Error('Redis Timeout'));
+
+    // 🟢 Đã fix: Gửi Object
+    const res = await request(app)
+      .put(`/api/workspaces/${ws._id}/members/user-002/permission`)
+      .send({ permissions: 'editor' });
+
+    expect(res.status).toBe(200);
+    expect(ws.save).toHaveBeenCalled();
+  });
+
+  test('❌ Workspace không tồn tại → 400', async () => {
+    Workspace.findById.mockResolvedValue(null);
+    const res = await request(app)
+      .put('/api/workspaces/ws-999/members/user-002/permission')
+      .send({ permissions: 'editor' });
+    
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Workspace not exist');
+  });
+
+  test('❌ User mục tiêu không có trong Workspace → 400', async () => {
+    const ws = getFreshWorkspace();
+    ws.members = [{ userId: { toString: () => 'user-001' }, role: 'ADMIN' }];
+    Workspace.findById.mockResolvedValue(ws);
+
+    const res = await request(app)
+      .put(`/api/workspaces/${ws._id}/members/user-not-found/permission`)
+      .send({ permissions: 'editor' });
+    
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Member not in this workspace');
+  });
+
+  test('❌ Người thực hiện không phải là ADMIN → 403', async () => {
+    const ws = getFreshWorkspace();
+    ws.members = [
+      { userId: { toString: () => 'user-001' }, role: 'MEMBER' }, // Hạ quyền user test
+      { userId: { toString: () => 'user-002' }, role: 'MEMBER', permissions: 'viewer' }
+    ];
+    Workspace.findById.mockResolvedValue(ws);
+
+    const res = await request(app)
+      .put(`/api/workspaces/${ws._id}/members/user-002/permission`)
+      .send({ permissions: 'editor' });
+    
+    expect(res.status).toBe(403);
+    expect(res.body.message).toBe('You are not an Admin to set permission');
+  });
+
+  test('❌ Người thực hiện không thuộc Workspace → 403', async () => {
+    const ws = getFreshWorkspace();
+    ws.members = [
+      { userId: { toString: () => 'user-002' }, role: 'MEMBER', permissions: 'viewer' }
+    ];
+    Workspace.findById.mockResolvedValue(ws);
+
+    const res = await request(app)
+      .put(`/api/workspaces/${ws._id}/members/user-002/permission`)
+      .send({ permissions: 'editor' });
+    
+    expect(res.status).toBe(403);
+  });
+
+  test('❌ DB lỗi (Crash) → 500', async () => {
+    const ws = getFreshWorkspace();
+    Workspace.findById.mockRejectedValue(new Error('DB Query Error'));
+    
+    const res = await request(app)
+      .put(`/api/workspaces/${ws._id}/members/user-002/permission`)
+      .send({ permissions: 'editor' });
+    
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('DB Query Error');
+  });
+});

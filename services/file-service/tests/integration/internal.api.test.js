@@ -1,9 +1,13 @@
+jest.mock('axios');
+
 const request = require('supertest');
 const express = require('express');
 const mongoose = require('mongoose');
+const axios = require('axios');
 
 const internalController = require('../../src/controllers/internal.controller');
 const Document = require('../../src/models/documents.model');
+const PhysicalFile = require('../../src/models/physical-file.model');
 const { connectTestDB, clearTestDB, closeTestDB } = require('./setup/db.setup');
 
 // ── Cài đặt App giả lập ────────────────────────────────────
@@ -14,6 +18,7 @@ function createApp() {
   app.delete('/api/files/internal/by-workspace/:id', internalController.deletedByWorkspace);
   app.delete('/api/files/internal/by-folders', internalController.deletedByFolders);
   app.put('/api/files/internal/by-folders/restore', internalController.restoreByFolders);
+  app.delete('/api/files/internal/by-folders/force', internalController.forceDeleteFilesByFolders); 
 
   return app;
 }
@@ -208,6 +213,112 @@ describe('[Integration] PUT /api/files/internal/by-folders/restore', () => {
     const res = await request(app)
       .put('/api/files/internal/by-folders/restore')
       .send({ folderIds: [fakeId] });
+
+    expect(res.status).toBe(500);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// DELETE /api/files/internal/by-folders/force
+// ═══════════════════════════════════════════════════════════
+describe('[Integration] DELETE /api/files/internal/by-folders/force', () => {
+  const app = createApp();
+
+  // Helper để tạo Physical File nhanh trong test này nếu file setup chưa có
+  async function seedPhysical(overrides = {}) {
+    return PhysicalFile.create({
+      hashString: `hash-${Date.now()}-${Math.random()}`,
+      minioObjectPath: `test-path-${Date.now()}.pdf`,
+      sizeBytes: 1024,
+      mimeType: 'application/pdf',
+      ...overrides
+    });
+  }
+
+  test('✅ Xóa vĩnh viễn file (usageCount = 0) → DB & Storage đều được gọi', async () => {
+    const pf = await seedPhysical();
+    const folderId = new mongoose.Types.ObjectId().toString();
+    const doc = await seedDocument({ folderId, physicalFileId: pf._id });
+
+    // Mock cho Axios Storage
+    axios.delete.mockResolvedValueOnce({});
+
+    const res = await request(app)
+      .delete('/api/files/internal/by-folders/force')
+      .send({ folderIds: [folderId] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toContain('Force deleted 1 files');
+
+    // KĐ DB: Document bay màu hoàn toàn
+    const checkDoc = await Document.collection.findOne({ _id: doc._id });
+    expect(checkDoc).toBeNull();
+
+    // KĐ DB: Physical File cũng bay màu
+    const checkPf = await PhysicalFile.collection.findOne({ _id: pf._id });
+    expect(checkPf).toBeNull();
+
+    // Storage bị gọi xóa
+    expect(axios.delete).toHaveBeenCalled();
+  });
+
+  test('✅ Xóa file nhưng usageCount > 0 (Dùng chung Physical File) → Giữ lại Storage', async () => {
+    const pf = await seedPhysical();
+    const folder1 = new mongoose.Types.ObjectId().toString();
+    const folder2 = new mongoose.Types.ObjectId().toString(); // Thư mục không bị xóa
+
+    // 2 file dùng chung 1 physical file
+    const doc1 = await seedDocument({ folderId: folder1, physicalFileId: pf._id });
+    const doc2 = await seedDocument({ folderId: folder2, physicalFileId: pf._id });
+
+    const res = await request(app)
+      .delete('/api/files/internal/by-folders/force')
+      .send({ folderIds: [folder1] }); // Chỉ xóa folder 1
+
+    expect(res.status).toBe(200);
+
+    // KĐ DB: Doc 1 bay màu, Doc 2 còn nguyên
+    const checkDoc1 = await Document.collection.findOne({ _id: doc1._id });
+    const checkDoc2 = await Document.collection.findOne({ _id: doc2._id });
+    expect(checkDoc1).toBeNull();
+    expect(checkDoc2).not.toBeNull();
+
+    // KĐ DB: Physical File VẪN CÒN vì doc2 vẫn đang dùng
+    const checkPf = await PhysicalFile.collection.findOne({ _id: pf._id });
+    expect(checkPf).not.toBeNull();
+
+    // Axios delete storage hoàn toàn không bị gọi
+    expect(axios.delete).not.toHaveBeenCalled();
+  });
+
+  test('✅ Thư mục rỗng (Không có file nào) → 200', async () => {
+    const emptyFolderId = new mongoose.Types.ObjectId().toString();
+    
+    const res = await request(app)
+      .delete('/api/files/internal/by-folders/force')
+      .send({ folderIds: [emptyFolderId] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe('No files to clean in these folders');
+  });
+
+  test('❌ Thiếu mảng folderIds → 400', async () => {
+    const res = await request(app)
+      .delete('/api/files/internal/by-folders/force')
+      .send({});
+
+    expect(res.status).toBe(400);
+  });
+
+  test('❌ Lỗi Database (Crash) → 500', async () => {
+    jest.spyOn(Document, 'find').mockImplementationOnce(() => { 
+      throw new Error('Mongoose Timeout'); 
+    });
+    
+    const folderId = new mongoose.Types.ObjectId().toString();
+    const res = await request(app)
+      .delete('/api/files/internal/by-folders/force')
+      .send({ folderIds: [folderId] });
 
     expect(res.status).toBe(500);
   });

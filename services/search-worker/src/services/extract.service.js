@@ -1,12 +1,23 @@
 const axios = require('axios');
-const pdfParse = require('pdf-parse');
-const mammoth = require('mammoth');
+const TIKA_URL = process.env.TIKA_URL;
 
 const SUPPORTED_MIME_TYPES = [
+    // Documents
     'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    // Text
     'text/plain',
+    'text/html',
+    'text/csv',
+    // Image
+    'image/png',
+    'image/jpeg',
+    'image/jpg',
 ];
 
 function isSupportedMime(mimeType) {
@@ -23,22 +34,24 @@ async function downloadFile(objectName) {
     return Buffer.from(fileResponse.data);
 }
 
-async function extractText(buffer, mimeType) {
-    if (mimeType === 'application/pdf') {
-        const data = await pdfParse(buffer);
-        return data.text?.trim() || null;
-    }
+async function extract(buffer, mimeType) {
+    try {
+        const response = await axios.put(`${TIKA_URL}/tika`, buffer, {
+            headers: {
+                'Content-Type': mimeType,
+                'Accept': 'text/plain',
+            },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+            timeout: 30000,
+        });
 
-    if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || mimeType === 'application/msword') {
-        const data = await mammoth.extractRawText({buffer});
-        return data.value?.trim() || null;
+        const text = response.data?.trim();
+        return text?.length > 0 ? text : null;
+    } catch(err) {
+        console.error(`[ExtractionService] Tika error for ${mimeType}:`, err.message);
+        return null;
     }
-
-    if (mimeType === 'text/plain') {
-        return buffer.toString('utf-8').trim() || null;
-    }
-
-    return null;
 }
 
-module.exports = {isSupportedMime, downloadFile, extractText};
+module.exports = {isSupportedMime, downloadFile, extract};

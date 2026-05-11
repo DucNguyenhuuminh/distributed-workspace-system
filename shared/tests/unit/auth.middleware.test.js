@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { authMiddleware, verifyToken } = require('../middlewares/auth.middleware');
+const { authMiddleware, verifyToken } = require('../../middlewares/auth.middleware');
 
 // Mock thư viện jsonwebtoken
 jest.mock('jsonwebtoken');

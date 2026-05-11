@@ -1,8 +1,42 @@
 // ── 1. Import Mocks trước khi require Controller ──────────────
 jest.mock('axios', () => require('./mocks/axios.mock'));
-jest.mock('shared', () => require('./mocks/shared.mock'));
+jest.mock('shared', () => {
+  let sharedMock = {};
+  try {
+    sharedMock = require('./mocks/shared.mock');
+  } catch (e) {}
+
+  return {
+    ...sharedMock,
+    addJob: jest.fn().mockResolvedValue({ id: 'job-mock' }),
+    queueForEvent: jest.fn((e) => `queue:${e}`),
+    jobIdFor: jest.fn((e, id) => `${e}:${id}`),
+    EVENTS: {},
+    DEFAULT_JOB_OPTIONS: { attempts: 3 },
+    // Middleware giả lập cho Express
+    verifyToken: (req, res, next) => {
+      if (!req.user) req.user = { userId: 'user-001' };
+      next();
+    },
+    validateRequest: (req, res, next) => next(),
+  };
+});
+
 jest.mock('../../src/models/documents.model', () => require('./mocks/models.mock').DocumentMock);
 jest.mock('../../src/models/physical-file.model', () => require('./mocks/models.mock').PhysicalFileMock);
+
+jest.mock('../../src/validators/file.validator', () => {
+  const mockMiddleware = (req, res, next) => next();
+  
+  return {
+    getFilesValidator: mockMiddleware,
+    fileIdParamValidator: mockMiddleware,
+    getFileLinkValidator: mockMiddleware,
+    renameFileValidator: mockMiddleware,
+    moveFileValidator: mockMiddleware,
+    restoreFileValidator: mockMiddleware
+  };
+})
 
 const request = require('supertest');
 const express = require('express');
@@ -11,6 +45,8 @@ const { addJob } = require('shared');
 
 const { DocumentMock: Document, PhysicalFileMock: PhysicalFile, getFreshDocument, getFreshPhysicalFile } = require('./mocks/models.mock');
 const workerController = require('../../src/controllers/file-worker.controller');
+
+const fileRoutes = require('../../src/routes/file-worker.routes');
 
 // ── 2. Cài đặt App giả lập ────────────────────────────────────
 function createApp() {
@@ -23,10 +59,7 @@ function createApp() {
     req.headers.authorization = 'Bearer test-token';
     next();
   });
-
-  app.post('/api/files-worker/hash', workerController.checkHash);
-  app.post('/api/files-worker/init', workerController.initUpload);
-  app.post('/api/files-worker/merge', workerController.mergeUpload);
+  app.use('/api/files-worker', fileRoutes);
 
   return app;
 }
@@ -78,7 +111,7 @@ describe('POST /api/files-worker/hash', () => {
     
     // Mock Axios trả về đúng user có quyền
     axios.get.mockResolvedValue({
-      data: { data: { members: [{ userId: 'user-001', permissions: ['upload'] }] } }
+      data: { data: { members: [{ userId: 'user-001', permissions: ['editor'] }] } }
     });
 
     const res = await request(app)
@@ -162,7 +195,7 @@ describe('POST /api/files-worker/init', () => {
 
   test('✅ Init thành công trong Workspace → 201', async () => {
     axios.get.mockResolvedValue({
-      data: { data: { members: [{ userId: 'user-001', permissions: ['upload'] }] } }
+      data: { data: { members: [{ userId: 'user-001', permissions: ['editor'] }] } }
     });
     axios.post.mockResolvedValue({
       data: { data: { uploadId: 'up-123', objectName: 'file/test.pdf', presignedUrls: [] } }

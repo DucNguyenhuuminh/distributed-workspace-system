@@ -1,17 +1,41 @@
 // ── 1. Mock External Services ─────────────────────────────────
 jest.mock('axios');
-jest.mock('shared', () => ({
-  addJob: jest.fn().mockResolvedValue({ id: 'job-mock' }),
-  queueForEvent: jest.fn((e) => `queue:${e}`),
-  jobIdFor: jest.fn((e, id) => `${e}:${id}`),
-  EVENTS: {
-    FILE_RENAMED: 'file.renamed',
-    FILE_TRASHED: 'file.trashed',
-    FILE_RESTORED: 'file.restored',
-    FILE_MOVED: 'file.moved',
-  },
-  DEFAULT_JOB_OPTIONS: { attempts: 3 }
-}));
+jest.mock('shared', () => {
+  let sharedMock = {};
+  try {
+    // Import mock cũ nếu đang chạy ở Unit Test
+    sharedMock = require('./mocks/shared.mock');
+  } catch (e) {
+    // Bỏ qua nếu không có file này (Thường là khi chạy Integration Test)
+  }
+
+  return {
+    ...sharedMock,
+    
+    // ── Mock Queue & BullMQ ──
+    addJob: jest.fn().mockResolvedValue({ id: 'job-mock' }),
+    queueForEvent: jest.fn((e) => `queue:${e}`),
+    jobIdFor: jest.fn((e, id) => `${e}:${id}`),
+    EVENTS: {
+      FILE_RENAMED: 'file.renamed',
+      FILE_TRASHED: 'file.trashed',
+      FILE_RESTORED: 'file.restored',
+      FILE_MOVED: 'file.moved',
+    },
+    DEFAULT_JOB_OPTIONS: { attempts: 3 },
+
+    // ── Mock Middlewares (Bắt buộc để đi qua Router thật) ──
+    verifyToken: (req, res, next) => {
+      // Ưu tiên req.user đã được set ở createApp(), nếu chưa có thì gán mặc định
+      if (!req.user) {
+        req.user = { userId: 'user-001' }; 
+      }
+      next();
+    },
+    validateRequest: (req, res, next) => next(),
+    getFilesValidator: (req, res, next) => next(), // Giả lập luôn validator nếu có
+  };
+});
 
 const request = require('supertest');
 const express = require('express');
@@ -27,6 +51,7 @@ const { connectTestDB, clearTestDB, closeTestDB } = require('./setup/db.setup');
 // ── 2. Định nghĩa hằng số & Cài đặt App ───────────────────────
 const USER_ID = new mongoose.Types.ObjectId().toString();
 const OTHER_USER = new mongoose.Types.ObjectId().toString();
+const fileRoutes = require('../../src/routes/file.routes');
 
 function createApp() {
   const app = express();
@@ -39,14 +64,7 @@ function createApp() {
     next();
   });
 
-  app.get('/api/files', filesController.getFiles);
-  app.get('/api/files/:id', filesController.getFileById);
-  app.get('/api/files/:id/link', filesController.getFileLink);
-  app.put('/api/files/:id/rename', filesController.renameFile);
-  app.delete('/api/files/:id', filesController.deleteFile);
-  app.put('/api/files/:id/restore', filesController.restoreFile);
-  app.put('/api/files/:id/move/:targetFolderId', filesController.moveFile);
-
+  app.use('/api/files', fileRoutes);
   return app;
 }
 
@@ -339,5 +357,199 @@ describe('[Integration] PUT /api/files/:id/move/:targetFolderId', () => {
 
     const res = await request(app).put(`/api/files/${doc._id}/move/folder-123`);
     expect(res.status).toBe(403);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// GET /api/files/trash
+// ═══════════════════════════════════════════════════════════
+describe('[Integration] GET /api/files/trash', () => {
+  const app = createApp();
+
+  test('✅ Lấy danh sách thùng rác My Drive cá nhân → 200', async () => {
+    await seedDocument({ originalName: 'Active.pdf' }); // Sống
+    await seedDocument({ originalName: 'Trashed.pdf', deletedAt: new Date() }); // Đã xóa
+
+    // 🟢 Lưu ý: Nếu Controller của bạn dùng plugin soft-delete, nhớ thêm .setOptions({ includeDeleted: true }) vào hàm getTrashedFiles nhé!
+    const res = await request(app).get('/api/files/trash');
+    
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    // Phải chỉ lấy ra file đã xóa
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].originalName).toBe('Trashed.pdf');
+  });
+
+  test('✅ Lấy danh sách thùng rác Workspace → 200', async () => {
+    const wsId = new mongoose.Types.ObjectId().toString();
+    await seedDocument({ workspaceId: wsId, originalName: 'WS-Trashed.pdf', deletedAt: new Date() });
+    
+    axios.get.mockResolvedValueOnce({ data: { data: { members: [{ userId: USER_ID }] } } });
+
+    const res = await request(app).get('/api/files/trash').query({ workspaceId: wsId });
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].workspaceId.toString()).toBe(wsId);
+  });
+
+  test('❌ Workspace không tồn tại (Service trả 404) → 404', async () => {
+    const wsId = new mongoose.Types.ObjectId().toString();
+    axios.get.mockResolvedValueOnce({ data: { data: null } });
+
+    const res = await request(app).get('/api/files/trash').query({ workspaceId: wsId });
+    expect(res.status).toBe(404);
+  });
+
+  test('❌ User không phải thành viên Workspace → 403', async () => {
+    const wsId = new mongoose.Types.ObjectId().toString();
+    axios.get.mockResolvedValueOnce({ data: { data: { members: [{ userId: OTHER_USER }] } } });
+
+    const res = await request(app).get('/api/files/trash').query({ workspaceId: wsId });
+    expect(res.status).toBe(403);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// DELETE /api/files/trash/empty
+// ═══════════════════════════════════════════════════════════
+describe('[Integration] DELETE /api/files/trash/empty', () => {
+  const app = createApp();
+
+  test('✅ Thùng rác rỗng → 200 (Báo Empty)', async () => {
+    const res = await request(app).delete('/api/files/trash/empty');
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe('Trash is empty');
+  });
+
+  test('✅ Dọn thùng rác: Xóa file nhưng Physical File vẫn đang được file khác dùng → KHÔNG xóa Storage', async () => {
+    // Tạo 1 Physical File chung
+    const pf = await seedPhysicalFile();
+    
+    // File 1: Đã xóa (nằm trong thùng rác)
+    const docTrashed = await Document.create({
+      originalName: 'Trashed.pdf', uploadedBy: USER_ID, physicalFileId: pf._id, workspaceId: null, deletedAt: new Date()
+    });
+    
+    // File 2: Còn sống (đang dùng chung Physical File với File 1)
+    await Document.create({
+      originalName: 'Clone.pdf', uploadedBy: USER_ID, physicalFileId: pf._id, workspaceId: null
+    });
+
+    const res = await request(app).delete('/api/files/trash/empty');
+    
+    expect(res.status).toBe(200);
+    
+    // Document bị xóa thật sự khỏi DB
+    const checkDoc = await Document.findById(docTrashed._id).setOptions({ includeDeleted: true });
+    expect(checkDoc).toBeNull();
+
+    // Axios DELETE storage KHÔNG được gọi vì usageCount > 0
+    expect(axios.delete).not.toHaveBeenCalled();
+
+    // Physical File vẫn phải tồn tại trong DB
+    const checkPf = await PhysicalFile.findById(pf._id);
+    expect(checkPf).not.toBeNull();
+  });
+
+  test('✅ Dọn thùng rác: Xóa triệt để (usageCount = 0) → GỌI Storage & Xóa Physical DB', async () => {
+    const pf = await seedPhysicalFile();
+    const docTrashed = await Document.create({
+      originalName: 'Trashed.pdf', uploadedBy: USER_ID, physicalFileId: pf._id, workspaceId: null, deletedAt: new Date()
+    });
+
+    axios.delete.mockResolvedValueOnce({}); // Mock Storage Service
+
+    const res = await request(app).delete('/api/files/trash/empty');
+    
+    expect(res.status).toBe(200);
+    
+    // Axios DELETE storage PHẢI ĐƯỢC GỌI
+    expect(axios.delete).toHaveBeenCalledWith(
+      expect.stringContaining('/api/storage/file'),
+      expect.any(Object)
+    );
+
+    // Physical File phải bay màu khỏi DB
+    const checkPf = await PhysicalFile.findById(pf._id);
+    expect(checkPf).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// DELETE /api/files/:id/force
+// ═══════════════════════════════════════════════════════════
+describe('[Integration] DELETE /api/files/:id/force', () => {
+  const app = createApp();
+
+  test('✅ Xóa vĩnh viễn My Drive file (usageCount = 0) → 200', async () => {
+    const pf = await seedPhysicalFile();
+    const doc = await Document.create({
+      originalName: 'Kill-Me.pdf', uploadedBy: USER_ID, physicalFileId: pf._id, workspaceId: null, deletedAt: new Date()
+    });
+
+    axios.delete.mockResolvedValueOnce({}); 
+
+    const res = await request(app).delete(`/api/files/${doc._id}/force`);
+    expect(res.status).toBe(200);
+    
+    // DB sạch sẽ
+    const checkDoc = await Document.findById(doc._id).setOptions({ includeDeleted: true });
+    expect(checkDoc).toBeNull();
+    const checkPf = await PhysicalFile.findById(pf._id);
+    expect(checkPf).toBeNull();
+  });
+
+  test('✅ Xóa vĩnh viễn Workspace file (Bởi ADMIN) → 200', async () => {
+    const pf = await seedPhysicalFile();
+    const wsId = new mongoose.Types.ObjectId().toString();
+    const doc = await Document.create({
+      originalName: 'WS-Kill.pdf', uploadedBy: OTHER_USER, physicalFileId: pf._id, workspaceId: wsId, deletedAt: new Date()
+    });
+
+    // Trả về quyền ADMIN cho USER_ID đang gửi request
+    axios.get.mockResolvedValueOnce({ data: { data: { members: [{ userId: USER_ID, role: 'ADMIN' }] } } });
+    axios.delete.mockResolvedValueOnce({});
+
+    const res = await request(app).delete(`/api/files/${doc._id}/force`);
+    expect(res.status).toBe(200);
+  });
+
+  test('❌ File không tồn tại → 404', async () => {
+    const fakeId = new mongoose.Types.ObjectId().toString();
+    const res = await request(app).delete(`/api/files/${fakeId}/force`);
+    expect(res.status).toBe(404);
+  });
+
+  test('❌ File chưa đưa vào thùng rác (deletedAt = null) → 400', async () => {
+    const doc = await seedDocument({ deletedAt: null }); // Vẫn đang hoạt động
+    const res = await request(app).delete(`/api/files/${doc._id}/force`);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('Move to trash first');
+  });
+
+  test('❌ My Drive file: Người thao tác không phải chủ sở hữu → 403', async () => {
+    const doc = await seedDocument({ uploadedBy: OTHER_USER, deletedAt: new Date() });
+    const res = await request(app).delete(`/api/files/${doc._id}/force`);
+    expect(res.status).toBe(403);
+  });
+
+  test('❌ Workspace file: User chỉ là MEMBER (Không phải ADMIN) → 403', async () => {
+    const wsId = new mongoose.Types.ObjectId().toString();
+    const doc = await seedDocument({ workspaceId: wsId, deletedAt: new Date() });
+    
+    axios.get.mockResolvedValueOnce({ data: { data: { members: [{ userId: USER_ID, role: 'MEMBER' }] } } });
+
+    const res = await request(app).delete(`/api/files/${doc._id}/force`);
+    expect(res.status).toBe(403);
+  });
+
+  test('❌ Workspace file: Workspace service sập → 500', async () => {
+    const wsId = new mongoose.Types.ObjectId().toString();
+    const doc = await seedDocument({ workspaceId: wsId, deletedAt: new Date() });
+    
+    axios.get.mockRejectedValueOnce(new Error('Network Crash'));
+
+    const res = await request(app).delete(`/api/files/${doc._id}/force`);
+    expect(res.status).toBe(500);
   });
 });

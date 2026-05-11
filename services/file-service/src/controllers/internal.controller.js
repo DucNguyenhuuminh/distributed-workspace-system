@@ -1,3 +1,5 @@
+const axios = require('axios');
+const { EVENTS, DEFAULT_JOB_OPTIONS } = require('shared');
 const Document = require('../models/documents.model');
 const PhysicalFile = require('../models/physical-file.model');
 
@@ -94,5 +96,72 @@ async function restoreByFolders(req,res) {
     }
 }
 
+//-------DELETE /api/files/internal/by-folders/force-----------
+async function forceDeleteFilesByFolders(req, res) {
+  try {
+    const { folderIds } = req.body;
 
-module.exports = {deletedByWorkspace, deletedByFolders, restoreByFolders, getListFiles, getFileIds};
+    if (!folderIds || folderIds.length === 0) {
+      return res.status(400).json({ message: 'Require list of folder ids' });
+    }
+
+    const filesToDelete = await Document.find({
+      folderId: { $in: folderIds },
+    }).populate('physicalFileId');
+
+    if (filesToDelete.length === 0) {
+      return res.json({ message: 'No files to clean in these folders' });
+    }
+
+    const fileIds      = filesToDelete.map((f) => f._id.toString());
+    const physicalFiles = filesToDelete.map((f) => f.physicalFileId).filter(Boolean);
+
+    await Document.deleteMany({ _id: { $in: fileIds } });
+    const uniquePhysicalFiles = [
+      ...new Map(physicalFiles.map((pf) => [pf._id.toString(), pf])).values(),
+    ];
+
+    const deletePromises = uniquePhysicalFiles.map(async (pf) => {
+      const usageCount = await Document.countDocuments({ physicalFileId: pf._id });
+      if (usageCount === 0) {
+        await axios.delete(
+          `${process.env.STORAGE_SERVICE_URL}/api/storage/file`,
+          {
+            data:    { objectName: pf.minioObjectPath },
+            headers: { Authorization: req.headers.authorization },
+          }
+        ).catch((e) => console.error(`[Storage] Error deleting ${pf.minioObjectPath}:`, e.message));
+
+        await PhysicalFile.findByIdAndDelete(pf._id);
+      }
+    });
+
+    await Promise.all(deletePromises);
+
+    try {
+      await addJob(
+        queueForEvent(EVENTS.FILE_TRASHED),
+        EVENTS.FILE_TRASHED,
+        { fileIds },
+        {
+          ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_TRASHED, `bulk-${Date.now()}`),
+        }
+      );
+    } catch (jobErr) {
+      console.error('[Queue Error] forceDeleteFilesByFolders:', jobErr.message);
+    }
+
+    return res.json({ message: `Force deleted ${fileIds.length} files` });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
+module.exports = {
+    deletedByWorkspace, 
+    deletedByFolders, 
+    restoreByFolders,
+    getListFiles, 
+    getFileIds,
+    forceDeleteFilesByFolders
+};

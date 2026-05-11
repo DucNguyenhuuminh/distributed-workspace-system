@@ -73,6 +73,17 @@ services:
       resources:
         limits:
           memory: 300m
+  
+  tika:
+    image: apache/tika:latest
+    container_name: workspace-tika
+    restart: unless-stopped
+    ports:
+      - "9998:9998"
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
 volumes:
   mongo_data:

@@ -1,16 +1,14 @@
 const {ChromaClient, DefaultEmbeddingFunction} = require ('chromadb');
 const client = new ChromaClient({path: process.env.CHROMA_URL});
 const COLLECTION_NAME = 'documents';
-const embedFunction = new DefaultEmbeddingFunction();
 
 let collection;
 
 async function initCollection() {
     try {
         collection = await client.getOrCreateCollection({
-            name: COLLECTION_NAME, 
-            embeddingFunction: embedFunction,
-            metadata: {'hnsw:space': 'cosine' },
+            name: COLLECTION_NAME,
+            metadata: {'hnsw:space': 'cosine'},
         });
         console.log(`[ChromaDB] Collection "${COLLECTION_NAME}" ready`);
         return collection;
@@ -20,9 +18,10 @@ async function initCollection() {
     }
 }
 
-async function upsertDocuments({id, document, metadata}) {
+async function upsert({id, embedding, document, metadata}) {
     await collection.upsert({
         ids: [id],
+        embeddings: [embedding],
         documents: [document],
         metadatas: [metadata],
     });
@@ -36,12 +35,19 @@ async function deleteByWorkspace(workspaceId) {
     await collection.delete({where: {workspaceId}});
 }
 
-async function query({text, nResults=10, where}) {
-    return collection.query({
-        queryTexts: [text],
-        nResults,
-        where: where || undefined,
-    });
+async function query({embedding, nResults=10, where}) {
+    try {
+        return await collection.query({
+            queryEmbeddings: [embedding],
+            nResults,
+            where: where || undefined,
+        }); 
+    } catch(err) {
+        if (err.message?.includes('no embeddings') || err.message?.includes('no documents')) {
+            return {ids: [[]], embeddings: [[]], documents: [[]], metadata: [[]]};
+        }
+        throw err;
+    }
 }
 
-module.exports = { initCollection, upsertDocuments, deleteById, deleteByWorkspace, query};
+module.exports = { initCollection, upsert, deleteById, deleteByWorkspace, query};

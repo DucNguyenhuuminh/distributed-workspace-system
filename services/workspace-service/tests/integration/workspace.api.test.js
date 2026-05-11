@@ -24,6 +24,7 @@ jest.mock('shared', () => ({
     WORKSPACE_DELETED: 'workspace.deleted',
     MEMBER_ADDED:      'member.added',
     MEMBER_REMOVED:    'member.removed',
+    MEMBER_PERMISSION: 'member.permission',
   },
 }));
 
@@ -31,6 +32,7 @@ const request  = require('supertest');
 const express  = require('express');
 const mongoose = require('mongoose');
 const axios    = require('axios');
+const { addJob } = require('shared');
 const { connectTestDB, clearTestDB, closeTestDB } = require('./setup/db.setup');
 
 // Import model thật — dùng MongoDB in-memory
@@ -58,21 +60,32 @@ async function seedWorkspace(overrides = {}) {
       {
         userId:      new mongoose.Types.ObjectId(ADMIN_ID),
         role:        'ADMIN',
-        permissions: 'editor',
+        permissions: 'editor', // 🟢 Đã sửa từ mảng ['editor'] thành chuỗi
       },
       {
         userId:      new mongoose.Types.ObjectId(MEMBER_ID),
         role:        'MEMBER',
-        permissions: 'viewer',
+        permissions: 'viewer', // 🟢 Đã sửa từ mảng ['viewer'] thành chuỗi
       },
     ],
     ...overrides,
   });
 }
 
-beforeAll(async () => connectTestDB());
-afterEach(async () => clearTestDB());
-afterAll(async () => closeTestDB());
+beforeAll(async () => {
+  await connectTestDB();
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
+
+afterEach(async () => {
+  await clearTestDB();
+  jest.clearAllMocks();
+});
+
+afterAll(async () => {
+  await closeTestDB();
+  console.error.mockRestore();
+});
 
 // ═══════════════════════════════════════════════════════════
 // POST /api/workspaces
@@ -108,7 +121,7 @@ describe('[Integration] POST /api/workspaces', () => {
 
     expect(adminMember).toBeDefined();
     expect(adminMember.role).toBe('ADMIN');
-    expect(adminMember.permissions).toBe('editor');
+    expect(adminMember.permissions).toBe('editor'); // 🟢 Kiểm tra dạng chuỗi
   });
 
   test('✅ Tạo nhiều workspace — độc lập nhau trong DB', async () => {
@@ -150,7 +163,7 @@ describe('[Integration] GET /api/workspaces', () => {
     await Workspace.create({
       name:      'Other Workspace',
       createdBy: new mongoose.Types.ObjectId(OUTSIDER_ID),
-      members:   [{ userId: new mongoose.Types.ObjectId(OUTSIDER_ID), role: 'ADMIN', permissions: 'editor' }],
+      members:   [{ userId: new mongoose.Types.ObjectId(OUTSIDER_ID), role: 'ADMIN', permissions: 'editor' }], // 🟢 Sửa thành chuỗi
     });
 
     const res = await request(app)
@@ -158,13 +171,11 @@ describe('[Integration] GET /api/workspaces', () => {
       .set('Authorization', 'Bearer token-admin');
 
     expect(res.status).toBe(200);
-    // Admin chỉ thấy workspace của mình
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].name).toBe('Workspace Admin');
   });
 
   test('✅ Trả mảng rỗng khi user không có workspace', async () => {
-    // Seed workspace không có outsider
     await seedWorkspace();
 
     const res = await request(app)
@@ -176,14 +187,14 @@ describe('[Integration] GET /api/workspaces', () => {
   });
 
   test('✅ Soft deleted workspace không xuất hiện trong list', async () => {
-    await seedWorkspace({ deletedAt: new Date() }); // đã xóa
+    await seedWorkspace({ deletedAt: new Date() }); 
 
     const res = await request(app)
       .get('/api/workspaces')
       .set('Authorization', 'Bearer token-admin');
 
     expect(res.status).toBe(200);
-    expect(res.body.data).toHaveLength(0); // pre-hook lọc ra
+    expect(res.body.data).toHaveLength(0); 
   });
 });
 
@@ -241,18 +252,17 @@ describe('[Integration] POST /api/workspaces/:id/members', () => {
     const res = await request(app)
       .post(`/api/workspaces/${ws._id}/members`)
       .set('Authorization', 'Bearer token-admin')
-      .send({ email: 'outsider@gmail.com', permissions: 'viewer' });
+      .send({ email: 'outsider@gmail.com', permissions: 'viewer' }); // 🟢 Chuỗi
 
     expect(res.status).toBe(200);
 
-    // Kiểm tra DB thực sự
     const updated = await Workspace.findById(ws._id);
-    expect(updated.members).toHaveLength(3); // 2 cũ + 1 mới
+    expect(updated.members).toHaveLength(3); 
     const newMember = updated.members.find(
       (m) => m.userId.toString() === OUTSIDER_ID
     );
     expect(newMember).toBeDefined();
-    expect(newMember.permissions).toBe('viewer');
+    expect(newMember.permissions).toBe('viewer'); // 🟢 So sánh chuỗi
   });
 
   test('✅ Không truyền permissions — mặc định viewer trong DB', async () => {
@@ -270,7 +280,7 @@ describe('[Integration] POST /api/workspaces/:id/members', () => {
     const newMember = updated.members.find(
       (m) => m.userId.toString() === OUTSIDER_ID
     );
-    expect(newMember.permissions).toBe('viewer');
+    expect(newMember.permissions).toBe('viewer'); // 🟢 So sánh chuỗi
   });
 
   test('❌ MEMBER cố thêm người → 403, DB không thay đổi', async () => {
@@ -283,14 +293,12 @@ describe('[Integration] POST /api/workspaces/:id/members', () => {
 
     expect(res.status).toBe(403);
 
-    // DB không thay đổi
     const unchanged = await Workspace.findById(ws._id);
     expect(unchanged.members).toHaveLength(2);
   });
 
   test('❌ Thêm người đã có trong workspace → 400', async () => {
     const ws = await seedWorkspace();
-    // member-id đã có trong members
     axios.get.mockResolvedValue({
       data: { data: { _id: MEMBER_ID, email: 'member@gmail.com' } },
     });
@@ -321,16 +329,13 @@ describe('[Integration] DELETE /api/workspaces/:id', () => {
 
     expect(res.status).toBe(200);
 
-    // Kiểm tra soft delete trong DB
-    const deleted = await Workspace.findById(ws._id)
-      .setOptions({ includeDeleted: true });
+    const deleted = await Workspace.findById(ws._id).setOptions({ includeDeleted: true });
     expect(deleted.deletedAt).not.toBeNull();
   });
 
   test('✅ Xóa workspace — folders con cũng bị soft delete', async () => {
     const ws = await seedWorkspace();
 
-    // Seed 2 folders thuộc workspace
     await Folder.create([
       { name: 'Folder 1', workspaceId: ws._id, createdBy: ADMIN_ID },
       { name: 'Folder 2', workspaceId: ws._id, createdBy: ADMIN_ID },
@@ -342,9 +347,7 @@ describe('[Integration] DELETE /api/workspaces/:id', () => {
       .delete(`/api/workspaces/${ws._id}`)
       .set('Authorization', 'Bearer token-admin');
 
-    // Kiểm tra folders bị soft delete
-    const folders = await Folder.find({ workspaceId: ws._id })
-      .setOptions({ includeDeleted: true });
+    const folders = await Folder.find({ workspaceId: ws._id }).setOptions({ includeDeleted: true });
     expect(folders.every((f) => f.deletedAt !== null)).toBe(true);
   });
 
@@ -372,7 +375,6 @@ describe('[Integration] DELETE /api/workspaces/:id', () => {
 
     expect(res.status).toBe(403);
 
-    // DB không thay đổi
     const unchanged = await Workspace.findById(ws._id);
     expect(unchanged.deletedAt).toBeNull();
   });
@@ -403,11 +405,10 @@ describe('[Integration] DELETE /api/workspaces/:id/members/:targetUserId', () =>
 
   test('✅ User tự rời khi còn admin khác — thành công', async () => {
     const ws = await seedWorkspace();
-    // Thêm admin thứ 2
     ws.members.push({
       userId:      new mongoose.Types.ObjectId(OUTSIDER_ID),
       role:        'ADMIN',
-      permissions: 'editor',
+      permissions: 'editor', // 🟢 Chuỗi
     });
     await ws.save();
 
@@ -418,7 +419,7 @@ describe('[Integration] DELETE /api/workspaces/:id/members/:targetUserId', () =>
     expect(res.status).toBe(200);
 
     const updated = await Workspace.findById(ws._id);
-    expect(updated.members).toHaveLength(2); // admin + outsider còn lại
+    expect(updated.members).toHaveLength(2); 
   });
 
   test('❌ Admin duy nhất tự rời → 400, DB không thay đổi', async () => {
@@ -431,7 +432,6 @@ describe('[Integration] DELETE /api/workspaces/:id/members/:targetUserId', () =>
     expect(res.status).toBe(400);
     expect(res.body.message).toBe('Cannot leave workspace if you are only Admin');
 
-    // DB không thay đổi
     const unchanged = await Workspace.findById(ws._id);
     expect(unchanged.members).toHaveLength(2);
   });
@@ -444,5 +444,86 @@ describe('[Integration] DELETE /api/workspaces/:id/members/:targetUserId', () =>
       .set('Authorization', 'Bearer token-member');
 
     expect(res.status).toBe(403);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// PUT /api/workspaces/:id/members/:targetUserId/permissions
+// ═══════════════════════════════════════════════════════════
+describe('[Integration] PUT /api/workspaces/:id/members/:targetUserId/permission', () => {
+  const app = createApp();
+
+  test('✅ Đổi quyền thành công — lưu quyền mới vào MongoDB', async () => {
+    const ws = await seedWorkspace();
+    const newPermissions = 'editor'; // 🟢 Sửa thành String
+
+    // 🟢 Mẹo nhỏ: Để gửi dữ liệu thô (String) dưới dạng JSON trong supertest, 
+    // ta phải đóng dấu ngoặc kép "" xung quanh giá trị chuỗi đó
+    const res = await request(app)
+      .put(`/api/workspaces/${ws._id}/members/${MEMBER_ID}/permission`)
+      .set('Authorization', 'Bearer token-admin')
+      .set('Content-Type', 'application/json')
+      .send({ permissions: newPermissions }); 
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe('Set permission successfully');
+
+    // Kiểm tra data thực tế trong DB
+    const updated = await Workspace.findById(ws._id);
+    const targetMember = updated.members.find(m => m.userId.toString() === MEMBER_ID);
+    
+    expect(targetMember.permissions).toBe(newPermissions); // 🟢 Kiểm tra kiểu String
+    expect(addJob).toHaveBeenCalled();
+  });
+
+  test('❌ Workspace không tồn tại trong DB → 400', async () => {
+    const fakeId = new mongoose.Types.ObjectId();
+    const res = await request(app)
+      .put(`/api/workspaces/${fakeId}/members/${MEMBER_ID}/permission`)
+      .set('Authorization', 'Bearer token-admin')
+      .set('Content-Type', 'application/json')
+      .send({ permissions: 'editor' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Workspace not exist');
+  });
+
+  test('❌ Target user không có trong Workspace → 400', async () => {
+    const ws = await seedWorkspace();
+    
+    const res = await request(app)
+      .put(`/api/workspaces/${ws._id}/members/${OUTSIDER_ID}/permission`)
+      .set('Authorization', 'Bearer token-admin')
+      .set('Content-Type', 'application/json')
+      .send({ permissions: 'editor' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('Member not in this workspace');
+  });
+
+  test('❌ Request User không có quyền ADMIN → 403', async () => {
+    const ws = await seedWorkspace();
+    
+    const res = await request(app)
+      .put(`/api/workspaces/${ws._id}/members/${ADMIN_ID}/permission`)
+      .set('Authorization', 'Bearer token-member') // Gọi API dưới tư cách MEMBER
+      .set('Content-Type', 'application/json')
+      .send({ permissions: 'editor' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toBe('You are not an Admin to set permission');
+  });
+
+  test('❌ Request User hoàn toàn không thuộc Workspace (OUTSIDER) → 403', async () => {
+    const ws = await seedWorkspace();
+    
+    const res = await request(app)
+      .put(`/api/workspaces/${ws._id}/members/${MEMBER_ID}/permission`)
+      .set('Authorization', 'Bearer token-outsider')
+      .set('Content-Type', 'application/json')
+      .send({ permissions: 'editor' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toBe('You are not an Admin to set permission');
   });
 });

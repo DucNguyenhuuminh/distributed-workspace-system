@@ -7,6 +7,7 @@ const {createBullBoard} = require('@bull-board/api');
 const {BullMQAdapter} = require('@bull-board/api/bullMQAdapter');
 const {ExpressAdapter} = require('@bull-board/express');
 const {getQueue, QUEUES} = require('shared');
+const embedService = require('./services/embed.service');
 
 const serverAdapter = new ExpressAdapter();
 serverAdapter.setBasePath('/admin/queues');
@@ -38,9 +39,15 @@ app.use((_, res) =>
 );
 
 async function start() {
+  await embedService.loadModel();
+  console.log('[search-worker] Embedding model ready');
+
+  await mongoose.connect(process.env.MONGO_URI);
+  console.log('[notification-service] MongoDB connected');
+
   await initCollection();
   startAllConsumers();
-
+  
   app.listen(process.env.PORT || 3004, () =>
     console.log(`[search-worker] Running on port ${process.env.PORT}`)
   );
