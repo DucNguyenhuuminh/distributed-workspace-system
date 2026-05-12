@@ -50,4 +50,10 @@ async function query({embedding, nResults=10, where}) {
     }
 }
 
-module.exports = { initCollection, upsert, deleteById, deleteByWorkspace, query};
+module.exports = { 
+    initCollection, 
+    upsert, 
+    deleteById, 
+    deleteByWorkspace, 
+    query
+};

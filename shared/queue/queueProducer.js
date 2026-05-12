@@ -37,4 +37,4 @@ async function closeAll() {
 process.on('SIGINT', closeAll);
 process.on('SIGTERM', closeAll);
 
-module.exports = {addJob,getQueue, closeAll, getQueue, connection};
+module.exports = {addJob,getQueue, closeAll, connection};

@@ -24,11 +24,18 @@ function isSupportedMime(mimeType) {
     return SUPPORTED_MIME_TYPES.includes(mimeType);
 }
 
-async function downloadFile(objectName) {
+async function downloadFile(objectName, originalName) {
+    if (!objectName) {
+        throw new Error(`downloadFile: objectName is required, got: ${objectName}`);
+    }
+
     const response = await axios.get(`${process.env.STORAGE_SERVICE_URL}/api/storage/file/url`,
-        {params: {objectName, action: 'viewer'}}
+        {params: {objectName, originalName, action: 'view'}}
     );
     const {url} = response.data.data;
+    if (!url) {
+        throw new Error('No download URL returned from storage service');
+    }
 
     const fileResponse = await axios.get(url, {responseType: 'arraybuffer'});
     return Buffer.from(fileResponse.data);
@@ -54,4 +61,8 @@ async function extract(buffer, mimeType) {
     }
 }
 
-module.exports = {isSupportedMime, downloadFile, extract};
+module.exports = {
+    isSupportedMime, 
+    downloadFile, 
+    extract
+};

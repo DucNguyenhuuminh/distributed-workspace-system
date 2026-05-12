@@ -8,7 +8,6 @@ const QUEUES ={
 };
 
 const EVENTS = {
-    FILE_UPLOAD: 'file.uploaded',
     FILE_MERGED: 'file.merged',
     FILE_RENAMED: 'file.renamed',
     FILE_TRASHED: 'file.trashed',
@@ -32,7 +31,6 @@ const EVENTS = {
 };
 
 const EVENT_QUEUE_MAP = {
-    [EVENTS.FILE_UPLOAD]: QUEUES.FILE,
     [EVENTS.FILE_MERGED]: QUEUES.FILE,
     [EVENTS.FILE_RENAMED]: QUEUES.FILE,
     [EVENTS.FILE_TRASHED]: QUEUES.FILE,
