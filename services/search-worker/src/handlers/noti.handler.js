@@ -2,26 +2,141 @@ const {EVENTS} = require('shared');
 const notificationService = require('../services/noti.service');
 
 const notiHandlers = {
-    [EVENTS.NOTIFY_USER]: async (job) => {
-        const {userId, actorId, type, title, message, actionUrl, metadata} = job.data;
-        console.log(`[NotificationHandler] NOTIFY_USER - user: ${userId}`);
+    // ── File events ──────────────────────────────────────
+  [EVENTS.FILE_MERGED]: async (job) => {
+    const { uploadedBy, originalName, workspaceId } = job.data;
+    await notificationService.createNotification({
+      userId:    uploadedBy,
+      actorId:   null,
+      type:      'FILE_MERGED',
+      title:     'Upload thành công',
+      message:   `File "${originalName}" đã được tải lên thành công`,
+      actionUrl: workspaceId ? `/workspaces/${workspaceId}` : '/my-drive',
+      metadata:  { originalName, workspaceId },
+    });
+  },
 
-        await notificationService.createNotification({
-            userId,
-            actorId: actorId || null,
-            type: type || 'GENERAL',
-            title,
-            message,
-            actionUrl: actionUrl || null,
-            metadata: metadata || {},
-        });
-    },
+  [EVENTS.FILE_RESTORED]: async (job) => {
+    const { uploadedBy, originalName } = job.data;
+    await notificationService.createNotification({
+      userId:   uploadedBy,
+      actorId:  null,
+      type:     'FILE_RESTORED',
+      title:    'File đã được khôi phục',
+      message:  `File "${originalName}" đã được khôi phục thành công`,
+      metadata: { originalName },
+    });
+  },
 
-    'notification.send_bulk': async (job) => {
-        const {notifications} = job.data;
-        console.log(`[NotificationHandler] SEND_BULK - total: ${notifications.length}`);
-        await notificationService.createBulkNotifications(notifications);
-    }
+  // ── Folder events ─────────────────────────────────────
+  [EVENTS.FOLDER_RESTORED]: async (job) => {
+    const { actorId, folderName } = job.data;
+    await notificationService.createNotification({
+      userId:   actorId,
+      actorId:  null,
+      type:     'FOLDER_RESTORED',
+      title:    'Thư mục đã được khôi phục',
+      message:  `Thư mục "${folderName || 'của bạn'}" đã được khôi phục`,
+      metadata: job.data,
+    });
+  },
+
+  // ── Workspace events ──────────────────────────────────
+  [EVENTS.WORKSPACE_CREATED]: async (job) => {
+    const { workspaceId, createdBy, name } = job.data;
+    await notificationService.createNotification({
+      userId:    createdBy,
+      actorId:   null,
+      type:      'WORKSPACE_CREATED',
+      title:     'Workspace đã được tạo',
+      message:   `Workspace "${name || workspaceId}" đã được tạo thành công`,
+      actionUrl: `/workspaces/${workspaceId}`,
+      metadata:  { workspaceId },
+    });
+  },
+
+  [EVENTS.WORKSPACE_DELETED]: async (job) => {
+    const { workspaceId, name, memberIds = [], actorId } = job.data;
+    if (!memberIds.length) return;
+
+    const notifications = memberIds.map((userId) => ({
+      userId,
+      actorId:   actorId || null,
+      type:      'WORKSPACE_DELETED',
+      title:     'Workspace đã bị xóa',
+      message:   `Workspace "${name}" đã bị giải tán`,
+      actionUrl: null,
+      metadata:  { workspaceId },
+      isRead:    false,
+    }));
+
+    await notificationService.createBulkNotifications(notifications);
+  },
+
+  [EVENTS.MEMBER_ADDED]: async (job) => {
+    const { workspaceId, targetUserId, workspaceName, actorId } = job.data;
+    await notificationService.createNotification({
+      userId:    targetUserId,
+      actorId:   actorId || null,
+      type:      'MEMBER_ADDED',
+      title:     'Bạn được mời vào workspace',
+      message:   `Bạn đã được thêm vào workspace "${workspaceName || workspaceId}"`,
+      actionUrl: `/workspaces/${workspaceId}`,
+      metadata:  { workspaceId },
+    });
+  },
+
+  [EVENTS.MEMBER_REMOVED]: async (job) => {
+    const { workspaceId, targetUserId, workspaceName, removedBy } = job.data;
+    await notificationService.createNotification({
+      userId:   targetUserId,
+      actorId:  removedBy || null,
+      type:     'MEMBER_REMOVED',
+      title:    'Bạn đã bị xóa khỏi workspace',
+      message:  `Bạn đã bị xóa khỏi workspace "${workspaceName || workspaceId}"`,
+      metadata: { workspaceId },
+    });
+  },
+
+  [EVENTS.MEMBER_PERMISSION]: async (job) => {
+    const { workspaceId, targetUserId, workspaceName, newPermission, actorId } = job.data;
+    await notificationService.createNotification({
+      userId:    targetUserId,
+      actorId:   actorId || null,
+      type:      'MEMBER_PERMISSION',
+      title:     'Quyền của bạn đã thay đổi',
+      message:   `Quyền của bạn trong workspace "${workspaceName || workspaceId}" đã được đổi thành "${newPermission}"`,
+      actionUrl: `/workspaces/${workspaceId}`,
+      metadata:  { workspaceId, newPermission },
+    });
+  },
+
+  // ── User events ───────────────────────────────────────
+  [EVENTS.USER_REGISTERED]: async (job) => {
+    const { userId, email } = job.data;
+    await notificationService.createNotification({
+      userId,
+      actorId:  null,
+      type:     'USER_REGISTERED',
+      title:    'Chào mừng bạn!',
+      message:  `Tài khoản ${email} đã được tạo thành công`,
+      metadata: { email },
+    });
+  },
+
+  // ── General ───────────────────────────────────────────
+  [EVENTS.NOTIFY_USER]: async (job) => {
+    const { userId, actorId, type, title, message, actionUrl, metadata } = job.data;
+    await notificationService.createNotification({
+      userId,
+      actorId:   actorId   || null,
+      type:      type || 'GENERAL',
+      title,
+      message,
+      actionUrl: actionUrl || null,
+      metadata:  metadata  || {},
+    });
+  },
 };
 
 async function notificationProcessor(job) {

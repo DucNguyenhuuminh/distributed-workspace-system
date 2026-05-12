@@ -3,7 +3,6 @@ const {fileProcessor} = require('../handlers/file.handler');
 const {workspaceProcessor} = require('../handlers/workspace.handler');
 const {folderProcessor} = require('../handlers/folder.handler');
 const {notificationProcessor} = require('../handlers/noti.handler');
-const { create } = require('../../../file-service/src/models/documents.model');
 
 function startAllConsumers() {
     createWorker(QUEUES.FILE, fileProcessor, {concurrency: 3});
