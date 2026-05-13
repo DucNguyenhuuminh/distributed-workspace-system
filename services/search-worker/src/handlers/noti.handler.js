@@ -99,15 +99,15 @@ const notiHandlers = {
   },
 
   [EVENTS.MEMBER_PERMISSION]: async (job) => {
-    const { workspaceId, targetUserId, workspaceName, newPermission, actorId } = job.data;
+    const { workspaceId, targetUserId, workspaceName, newPermissions, actorId } = job.data;
     await notificationService.createNotification({
       userId:    targetUserId,
       actorId:   actorId || null,
       type:      'MEMBER_PERMISSION',
       title:     'Quyền của bạn đã thay đổi',
-      message:   `Quyền của bạn trong workspace "${workspaceName || workspaceId}" đã được đổi thành "${newPermission}"`,
+      message:   `Quyền của bạn trong workspace "${workspaceName || workspaceId}" đã được đổi thành "${newPermissions}"`,
       actionUrl: `/workspaces/${workspaceId}`,
-      metadata:  { workspaceId, newPermission },
+      metadata:  { workspaceId, newPermissions },
     });
   },
 

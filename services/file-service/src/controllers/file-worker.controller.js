@@ -134,7 +134,7 @@ async function initUpload(req,res) {
 async function mergeUpload(req,res) {
     try {
         const userId = req.user.userId;
-        const {uploadId, etags, minioObjectPath, objectName, totalChunks,
+        const {uploadId, etags, minioObjectPath, filename, totalChunks,
             mimeType, hashString ,sizeBytes, workspaceId, folderId} = req.body;
         
         try {
@@ -155,7 +155,7 @@ async function mergeUpload(req,res) {
         }
 
         const file = await Document.create({
-            originalName: objectName,
+            originalName: filename,
             workspaceId: workspaceId || null,
             folderId: folderId || null,
             physicalFileId: physicalFile._id,
@@ -169,7 +169,7 @@ async function mergeUpload(req,res) {
                 {
                     fileId: file._id.toString(),  
                     minioObjectPath: minioObjectPath, 
-                    originalName: objectName, 
+                    originalName: filename, 
                     totalChunks,
                     mimeType,
                     sizeBytes,      

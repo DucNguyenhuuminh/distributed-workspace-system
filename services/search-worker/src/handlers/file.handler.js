@@ -1,4 +1,4 @@
-const {EVENTS} = require('shared');
+const {EVENTS, jobIdFor, QUEUES, DEFAULT_JOB_OPTIONS, addJob} = require('shared');
 const chromaService = require('../config/chroma.config');
 const extractService = require('../services/extract.service');
 const embedService = require('../services/embed.service');
@@ -55,6 +55,16 @@ async function deleteFromChroma(ids) {
   }
 }
 
+const forwardToNotification = async (eventName, data) => {
+  try {
+    const jobId = jobIdFor(`${eventName}_noti`, data.fileId || Date.now());
+    await addJob(QUEUES.NOTIFICATION,eventName,data,{...DEFAULT_JOB_OPTIONS, jobId});
+    console.log(`[FileHandler] Redirect ${eventName} to notification-queue`);
+  } catch(err) {
+    console.error(`[NotificationHandler] Error redirecting ${eventName} to notification-queue:`, err.message);
+  }
+}
+
 //---------HANDLERS---------
 const fileHandlers = {
   [EVENTS.FILE_MERGED]:   async (job) => {
@@ -65,16 +75,20 @@ const fileHandlers = {
       return;
     }
     await indexDocument(data);
+    await forwardToNotification(EVENTS.FILE_MERGED,job.data);
   },
+
   [EVENTS.FILE_RENAMED]:  async (job) => {
     console.log(`[FileHandler] FILE_RENAMED — ${job.data.fileId}`);
   },
+
   [EVENTS.FILE_TRASHED]:  async (job) => {
     const { fileId, fileIds } = job.data;
     const idsToDelete = fileIds? fileIds : fileId;
     console.log(`[FileHandler] FILE_TRASHED — ${fileId}`);
     await deleteFromChroma(idsToDelete);
   },
+
   [EVENTS.FILE_RESTORED]: async (job) => {
     const {fileId, minioObjectPath, mimeType, originalName, workspaceId, uploadedBy} = job.data;
     console.log(`[FileHandler] FILE_RESTORED — ${fileId}`);
@@ -87,6 +101,7 @@ const fileHandlers = {
       uploadedBy 
     });
   },
+
   [EVENTS.FILE_MOVED]:    async (job) => {
     const { fileId, minioObjectPath, mimeType, originalName, newWorkspaceId, uploadedBy } = job.data;
     console.log(`[FileHandler] FILE_MOVED — ${fileId}`);

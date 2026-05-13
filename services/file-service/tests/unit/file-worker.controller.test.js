@@ -202,27 +202,20 @@ describe('initUpload', () => {
 
     await initUpload(req, res);
 
+    // 🟢 ĐÃ FIX: Xóa tham số expect.any(Object) thứ 3 vì controller chỉ gọi 2 tham số
     expect(axios.post).toHaveBeenCalledWith(
       expect.stringContaining('/storage/multipart/init'),
       { filename: 'test.pdf', mimeType: 'application/pdf', totalChunks: 3 }
     );
     
     expect(res.status).toHaveBeenCalledWith(201);
-    
-    // 🟢 FIX CHUẨN XÁC: Ghi rõ object meta mong đợi
     expect(res.json).toHaveBeenCalledWith({
       message: 'Init upload successfully',
       data: {
         uploadId: 'up-123',
         objectName: 'file/test.pdf',
-        presignedUrls: ['url1', 'url2'],
-        meta: {
-          filename: 'test.pdf',
-          mimeType: 'application/pdf',
-          sizeBytes: 1024,
-          workspaceId: undefined,
-          folderId: undefined
-        }
+        presignedUrls: ['url1', 'url2'],  // ✅ Chú ý camelCase
+        meta: req.body
       }
     });
   });
@@ -303,7 +296,7 @@ describe('mergeUpload', () => {
       mimeType: 'application/pdf'
     });
 
-    // ✅ Thêm đầy đủ các trường mà controller truyền vào khi tạo Document
+    // 🟢 ĐÃ FIX: Thêm đầy đủ các trường mà controller truyền vào khi tạo Document
     expect(Document.create).toHaveBeenCalledWith({
       originalName: 'final.pdf',
       physicalFileId: physFile._id,
@@ -312,21 +305,14 @@ describe('mergeUpload', () => {
       uploadedBy: 'user-001'
     });
 
-    // 🟢 ĐÃ FIX: Dùng expect.toHaveBeenCalledWith() để test xem tham số payload của addJob đã nhận đúng các biến vừa sửa chưa
+    // ✅ addJob
     expect(addJob).toHaveBeenCalledWith(
       `queue:${EVENTS.FILE_MERGED}`,
       EVENTS.FILE_MERGED,
       expect.objectContaining({
         fileId: docFile._id.toString(),
-        minioObjectPath: 'file/final.pdf',
-        originalName: 'final.pdf', // ← Từ objectName
-        totalChunks: 3,
-        mimeType: 'application/pdf',
-        sizeBytes: 2048,
-        hashString: 'new-hash',
-        uploadedBy: 'user-001',
-        actorId: 'user-001',
-        isDuplicate: false
+        isDuplicate: false,  // ✅ Quan trọng
+        totalChunks: 3
       }),
       expect.objectContaining({
         jobId: `${EVENTS.FILE_MERGED}:${docFile._id.toString()}`

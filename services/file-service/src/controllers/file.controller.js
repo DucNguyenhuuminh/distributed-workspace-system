@@ -228,12 +228,23 @@ async function restoreFile(req,res) {
         );
 
         file.deletedAt = null;
+        const physicalFile = await PhysicalFile.findById(file.physicalFileId);
+        if (!physicalFile) {
+            return res.status(404).json({ message: "Physical file not found" });
+        }
 
         try{
             await addJob(
                 queueForEvent(EVENTS.FILE_RESTORED),
                 EVENTS.FILE_RESTORED,
-                {fileId, file, actorId: userId, workspaceId: file.workspaceId},
+                {
+                    fileId, 
+                    minioObjectPath: physicalFile.minioObjectPath,
+                    mimeType: physicalFile.mimeType,
+                    originalName: file.originalName,
+                    workspaceId: file.workspaceId,
+                    uploadedBy: userId
+                },
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_RESTORED, fileId)}
             );
         } catch(jobErr) {
