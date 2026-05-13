@@ -54,11 +54,58 @@ describe('Extract Service', () => {
       // Đảm bảo call đầu tiên lấy link đúng cách
       expect(axios.get).toHaveBeenNthCalledWith(1, 
         expect.stringContaining('/api/storage/file/url'), 
-        expect.objectContaining({ params: { objectName: 'my-object.pdf', action: 'viewer' } })
+        expect.objectContaining({ params: { objectName: 'my-object.pdf', action: 'view' } })
       );
       
       // Đảm bảo call thứ 2 download trả về arraybuffer
       expect(axios.get).toHaveBeenNthCalledWith(2, 'http://minio/file-url', { responseType: 'arraybuffer' });
+    });
+
+    test('❌ Ném lỗi nếu thiếu tham số objectName', async () => {
+      await expect(extractService.downloadFile(null))
+        .rejects.toThrow('downloadFile: objectName is required, got: null');
+      
+      await expect(extractService.downloadFile(''))
+        .rejects.toThrow('downloadFile: objectName is required, got: ');
+
+      // Đảm bảo không có API nào được gọi
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    test('❌ Ném lỗi nếu gọi API lấy presigned URL thất bại', async () => {
+      // Giả lập lỗi từ Storage Service (VD: sập server hoặc file không tồn tại)
+      axios.get.mockRejectedValueOnce(new Error('Storage Service Down'));
+
+      await expect(extractService.downloadFile('my-object.pdf'))
+        .rejects.toThrow('Storage Service Down');
+
+      // Đảm bảo chỉ gọi API 1 lần rồi dừng
+      expect(axios.get).toHaveBeenCalledTimes(1);
+    });
+
+    test('❌ Ném lỗi nếu API không trả về URL hợp lệ', async () => {
+      // Giả lập API trả về data nhưng thiếu trường `url`
+      axios.get.mockResolvedValueOnce({ data: { data: { url: null } } });
+
+      await expect(extractService.downloadFile('my-object.pdf'))
+        .rejects.toThrow('No download URL returned from storage service');
+
+      // Đảm bảo chỉ gọi API 1 lần rồi dừng (không gọi bước download file)
+      expect(axios.get).toHaveBeenCalledTimes(1);
+    });
+
+    test('❌ Ném lỗi nếu tải file thực tế từ presigned URL bị lỗi', async () => {
+      // Mock call 1: Lấy URL thành công
+      axios.get.mockResolvedValueOnce({ data: { data: { url: 'http://minio/file-url' } } });
+      
+      // Mock call 2: Tải file thất bại (VD: Link hết hạn, Network error)
+      axios.get.mockRejectedValueOnce(new Error('Network Timeout'));
+
+      await expect(extractService.downloadFile('my-object.pdf'))
+        .rejects.toThrow('Network Timeout');
+
+      // Đảm bảo API đã được gọi đủ 2 lần trước khi throw error
+      expect(axios.get).toHaveBeenCalledTimes(2);
     });
   });
 

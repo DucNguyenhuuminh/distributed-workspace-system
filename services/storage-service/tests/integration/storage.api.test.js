@@ -501,7 +501,7 @@ describe('[Integration] GET /api/storage/file/url', () => {
 
     await request(app)
       .get('/api/storage/file/url')
-      .query({ objectName: 'file/img.png', action: 'preview' });
+      .query({ objectName: 'file/img.png', action: 'view' });
 
     expect(minioClient.presignedGetObject).toHaveBeenCalledWith(
       'test-bucket', 'file/img.png', 7 * 3600,

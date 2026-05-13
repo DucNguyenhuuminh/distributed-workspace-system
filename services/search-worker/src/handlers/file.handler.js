@@ -17,7 +17,7 @@ async function indexDocument({fileId, minioObjectPath, mimeType, originalName, w
   }
 
   try {
-    console.log(`[FileHandler] Processing: ${fileId, minioObjectPath}`);
+    console.log(`[FileHandler] Processing: fileId: ${fileId}, path: ${minioObjectPath}`);
     const buffer = await extractService.downloadFile(minioObjectPath, originalName);
     const text = await extractService.extract(buffer, mimeType);
 
@@ -90,7 +90,7 @@ const fileHandlers = {
   [EVENTS.FILE_MOVED]:    async (job) => {
     const { fileId, minioObjectPath, mimeType, originalName, newWorkspaceId, uploadedBy } = job.data;
     console.log(`[FileHandler] FILE_MOVED — ${fileId}`);
-    await chromaService.deleteById(documentId);
+    await chromaService.deleteById(fileId);
     await indexDocument({ 
       fileId, 
       minioObjectPath, 

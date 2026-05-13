@@ -30,7 +30,6 @@ describe('QUEUES constants', () => {
 // ═══════════════════════════════════════════════════════════
 describe('EVENTS constants', () => {
   test('✅ File events đúng', () => {
-    expect(EVENTS.FILE_UPLOAD).toBe('file.uploaded');
     expect(EVENTS.FILE_MERGED).toBe('file.merged');
     expect(EVENTS.FILE_RENAMED).toBe('file.renamed');
     expect(EVENTS.FILE_TRASHED).toBe('file.trashed');
@@ -69,7 +68,6 @@ describe('EVENTS constants', () => {
 // ═══════════════════════════════════════════════════════════
 describe('EVENT_QUEUE_MAP', () => {
   test('✅ File events → file-queue', () => {
-    expect(EVENT_QUEUE_MAP[EVENTS.FILE_UPLOAD]).toBe(QUEUES.FILE);
     expect(EVENT_QUEUE_MAP[EVENTS.FILE_MERGED]).toBe(QUEUES.FILE);
     expect(EVENT_QUEUE_MAP[EVENTS.FILE_RENAMED]).toBe(QUEUES.FILE);
     expect(EVENT_QUEUE_MAP[EVENTS.FILE_TRASHED]).toBe(QUEUES.FILE);
@@ -129,7 +127,6 @@ describe('DEFAULT_JOB_OPTIONS', () => {
 // ═══════════════════════════════════════════════════════════
 describe('queueForEvent()', () => {
   test('✅ Event có trong map → trả đúng queue', () => {
-    expect(queueForEvent(EVENTS.FILE_UPLOAD)).toBe(QUEUES.FILE);
     expect(queueForEvent(EVENTS.FOLDER_CREATED)).toBe(QUEUES.FOLDER);
     expect(queueForEvent(EVENTS.WORKSPACE_CREATED)).toBe(QUEUES.WORKSPACE);
     expect(queueForEvent(EVENTS.NOTIFY_USER)).toBe(QUEUES.NOTIFICATION);
@@ -166,11 +163,6 @@ describe('jobIdFor()', () => {
   test('✅ entityId là số → convert sang string', () => {
     const result = jobIdFor('folder.created', 42);
     expect(result).toBe('folder_created_42');
-  });
-
-  test('✅ entityId là ObjectId-like string', () => {
-    const result = jobIdFor(EVENTS.FILE_UPLOAD, '507f1f77bcf86cd799439011');
-    expect(result).toBe('file_uploaded_507f1f77bcf86cd799439011');
   });
 
   test('✅ Không có entityId → format event_timestamp', () => {

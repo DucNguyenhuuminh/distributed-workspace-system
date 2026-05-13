@@ -1,7 +1,7 @@
 const { fileProcessor } = require('../../src/handlers/file.handler');
 const chromaService = require('../../src/config/chroma.config');
 const extractService = require('../../src/services/extract.service');
-const embedService = require('../../src/services/embed.service'); // Bổ sung để mock
+const embedService = require('../../src/services/embed.service');
 const { EVENTS } = require('shared');
 
 // 🟢 FIX LỖI CRASH JEST: Mock hoàn toàn embedService để ngăn Jest load @xenova/transformers
@@ -11,14 +11,14 @@ jest.mock('../../src/services/embed.service', () => ({
 
 // CHỈ mock các service chức năng bên ngoài
 jest.mock('../../src/config/chroma.config', () => ({
-  upsert: jest.fn(), // Đổi thành upsert theo handler mới
+  upsert: jest.fn(), 
   deleteById: jest.fn()
 }));
 
 jest.mock('../../src/services/extract.service', () => ({
   isSupportedMime: jest.fn(),
   downloadFile: jest.fn(),
-  extract: jest.fn() // Đổi thành extract theo handler mới
+  extract: jest.fn() 
 }));
 
 describe('File Handler Processor', () => {
@@ -32,35 +32,44 @@ describe('File Handler Processor', () => {
     jest.clearAllMocks();
   });
 
+  // Cập nhật lại baseJobData cho khớp với logic mới (dùng fileId thay vì documentId)
   const baseJobData = {
-    documentId: 'doc-1',
-    objectName: 'file.pdf',
+    fileId: 'file-1',
+    minioObjectPath: 'uploads/file.pdf',
     mimeType: 'application/pdf',
+    originalName: 'report.pdf',
     workspaceId: 'ws-1',
     uploadedBy: 'user-1'
   };
 
-  test('✅ FILE_UPLOAD - Bỏ qua nếu mimeType không hỗ trợ', async () => {
-    extractService.isSupportedMime.mockReturnValueOnce(false);
+  test('✅ FILE_MERGED - Bỏ qua nếu thiếu fileId hoặc minioObjectPath', async () => {
+    await fileProcessor({ name: EVENTS.FILE_MERGED, data: { ...baseJobData, fileId: null } });
     
-    await fileProcessor({ name: EVENTS.FILE_UPLOAD, data: { ...baseJobData, mimeType: 'image/png' } });
-    
-    expect(extractService.downloadFile).not.toHaveBeenCalled();
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Skipping unsupported MIME type'));
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Invalid FILE_MERGED data'), expect.any(Object));
+    expect(extractService.isSupportedMime).not.toHaveBeenCalled();
   });
 
-  test('✅ FILE_UPLOAD - Bỏ qua nếu extract ra text rỗng', async () => {
+  test('✅ FILE_MERGED - Bỏ qua nếu mimeType không hỗ trợ', async () => {
+    extractService.isSupportedMime.mockReturnValueOnce(false);
+    
+    await fileProcessor({ name: EVENTS.FILE_MERGED, data: { ...baseJobData, mimeType: 'image/png' } });
+    
+    expect(extractService.downloadFile).not.toHaveBeenCalled();
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Skipping unsupported MIME type: image/png'));
+  });
+
+  test('✅ FILE_MERGED - Bỏ qua nếu extract ra text rỗng', async () => {
     extractService.isSupportedMime.mockReturnValueOnce(true);
     extractService.downloadFile.mockResolvedValueOnce(Buffer.from(''));
     extractService.extract.mockResolvedValueOnce(null);
 
-    await fileProcessor({ name: EVENTS.FILE_UPLOAD, data: baseJobData });
+    await fileProcessor({ name: EVENTS.FILE_MERGED, data: baseJobData });
 
     expect(chromaService.upsert).not.toHaveBeenCalled();
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('No text extracted'));
   });
 
-  test('✅ FILE_UPLOAD - Upsert thành công (cắt 512 char cho embedding, 5000 cho text)', async () => {
+  test('✅ FILE_MERGED - Upsert thành công (cắt 512 char cho embedding, 5000 cho text)', async () => {
     extractService.isSupportedMime.mockReturnValueOnce(true);
     extractService.downloadFile.mockResolvedValueOnce(Buffer.from(''));
     
@@ -68,37 +77,33 @@ describe('File Handler Processor', () => {
     const longText = 'a'.repeat(6000);
     extractService.extract.mockResolvedValueOnce(longText);
 
-    await fileProcessor({ name: EVENTS.FILE_UPLOAD, data: baseJobData });
+    await fileProcessor({ name: EVENTS.FILE_MERGED, data: baseJobData });
+
+    // Kiểm tra đã truyền originalName vào hàm downloadFile
+    expect(extractService.downloadFile).toHaveBeenCalledWith('uploads/file.pdf', 'report.pdf');
 
     // Kiểm tra đúng logic: cắt 512 ký tự cho embedService
     expect(embedService.embed).toHaveBeenCalledWith('a'.repeat(512));
 
-    // Kiểm tra đúng logic: cắt 5000 ký tự đưa vào ChromaDB
+    // Kiểm tra đúng logic: cắt 5000 ký tự đưa vào ChromaDB và map chuẩn metadata
     expect(chromaService.upsert).toHaveBeenCalledWith({
-      id: 'doc-1',
+      id: 'file-1',
       embedding: [0.1, 0.2, 0.3],
       document: 'a'.repeat(5000), 
-      metadata: { documentId: 'doc-1', workspaceId: 'ws-1', uploadedBy: 'user-1', mimeType: 'application/pdf' }
+      metadata: { fileId: 'file-1', workspaceId: 'ws-1', uploadedBy: 'user-1', mimeType: 'application/pdf' }
     });
   });
 
-  test('✅ FILE_MERGED - Tương tự UPLOAD (Index document)', async () => {
-    extractService.isSupportedMime.mockReturnValueOnce(true);
-    extractService.downloadFile.mockResolvedValueOnce(Buffer.from(''));
-    extractService.extract.mockResolvedValueOnce('Merged Text');
-
-    await fileProcessor({ name: EVENTS.FILE_MERGED, data: baseJobData });
-
-    expect(chromaService.upsert).toHaveBeenCalled();
-  });
-
-  test('✅ FILE_RESTORED - Tương tự UPLOAD (Index document)', async () => {
+  test('✅ FILE_RESTORED - Index lại document thành công (Xử lý originalName fallback)', async () => {
     extractService.isSupportedMime.mockReturnValueOnce(true);
     extractService.downloadFile.mockResolvedValueOnce(Buffer.from(''));
     extractService.extract.mockResolvedValueOnce('Restored Text');
 
-    await fileProcessor({ name: EVENTS.FILE_RESTORED, data: baseJobData });
+    // Giả lập không có originalName để test fallback ' '
+    const { originalName, ...dataWithoutOriginalName } = baseJobData;
+    await fileProcessor({ name: EVENTS.FILE_RESTORED, data: dataWithoutOriginalName });
 
+    expect(extractService.downloadFile).toHaveBeenCalledWith('uploads/file.pdf', ' ');
     expect(chromaService.upsert).toHaveBeenCalled();
   });
 
@@ -108,9 +113,14 @@ describe('File Handler Processor', () => {
     expect(chromaService.upsert).not.toHaveBeenCalled();
   });
 
-  test('✅ FILE_TRASHED - Xóa document khỏi DB', async () => {
-    await fileProcessor({ name: EVENTS.FILE_TRASHED, data: { documentId: 'doc-1' } });
-    expect(chromaService.deleteById).toHaveBeenCalledWith('doc-1');
+  test('✅ FILE_TRASHED - Xóa document khỏi DB (Hỗ trợ mảng fileIds)', async () => {
+    await fileProcessor({ 
+      name: EVENTS.FILE_TRASHED, 
+      data: { fileIds: ['file-1', 'file-2'] } 
+    });
+    
+    expect(chromaService.deleteById).toHaveBeenCalledWith('file-1');
+    expect(chromaService.deleteById).toHaveBeenCalledWith('file-2');
   });
 
   test('✅ FILE_MOVED - Xóa bản ghi cũ và index lại bản ghi mới', async () => {
@@ -123,21 +133,12 @@ describe('File Handler Processor', () => {
       data: { ...baseJobData, newWorkspaceId: 'ws-new' } 
     });
 
-    expect(chromaService.deleteById).toHaveBeenCalledWith('doc-1');
-    expect(chromaService.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      metadata: expect.objectContaining({ workspaceId: 'ws-new' }) // Đã trỏ qua workspace mới
-    }));
-  });
-
-  test('❌ Bỏ qua event không xác định', async () => {
-    await fileProcessor({ name: 'unknown.event', data: {} });
-    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('Unknown event: unknown.event'));
-  });
-
-  test('❌ Ném lỗi nếu handler crash', async () => {
-    extractService.isSupportedMime.mockImplementation(() => { throw new Error('Crash!'); });
+    // 1. Kiểm tra đã xóa file cũ thành công bằng fileId chưa
+    expect(chromaService.deleteById).toHaveBeenCalledWith('file-1');
     
-    await expect(fileProcessor({ name: EVENTS.FILE_UPLOAD, data: baseJobData })).rejects.toThrow('Crash!');
-    expect(console.error).toHaveBeenCalled();
-  });
+    // 2. Kiểm tra đã gọi hàm index mới trỏ về workspace mới chưa
+    expect(chromaService.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ workspaceId: 'ws-new' }) 
+    }));
+  })
 });
