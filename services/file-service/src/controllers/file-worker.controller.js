@@ -10,7 +10,7 @@ const {addJob,queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('s
 async function checkHash(req,res) {
     try {
         const userId = req.user.userId;
-        const {filename, hashString, workspaceId, folderId} = req.body;
+        const {objectName, hashString, workspaceId, folderId} = req.body;
 
         if (!hashString) {
             return res.status(400).json({message: "Hash string is required"});
@@ -41,27 +41,16 @@ async function checkHash(req,res) {
             }
 
             const newFile = await Document.create({
-                originalName: filename,
+                originalName: objectName,
                 workspaceId: workspaceId || null,
                 folderId: folderId || null,
                 physicalFileId: existingPhysicalFile._id,
                 uploadedBy: userId,
             });
 
-            try {
-                await addJob(
-                    queueForEvent(EVENTS.FILE_MERGED),
-                    EVENTS.FILE_MERGED,
-                    {filename, mimeType: existingPhysicalFile.mimeType, sizeBytes: existingPhysicalFile.sizeBytes, hashString, workspaceId, folderId, actorId: userId, isDuplicate: true },
-                    {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_MERGED,newFile._id.toString())}
-                );
-            } catch(jobErr) {
-                console.error('[Queue Error] Failed to enqueue FILE_MERGED job in checkHash', jobErr);
-            }
-
             return res.status(200).json({message: "Deduplication successful. File copy instantly", data: {document: newFile, isDuplicate: true}});
         }
-        return res.status(404).json({message: "File is new. Proceed to multipart upload", data: {isDuplicate: false}});
+        return res.status(200).json({message: "File is new. Proceed to multipart upload", data: {isDuplicate: false}});
 
     } catch(err) {
         return res.status(500).json({message: err.message});
@@ -72,7 +61,7 @@ async function checkHash(req,res) {
 async function initUpload(req,res) {
     try {
         const userId = req.user.userId;
-        const {filename, totalChunks, mimeType, sizeBytes, workspaceId, folderId} = req.body;
+        const {objectName, totalChunks, mimeType, sizeBytes, workspaceId, folderId} = req.body;
 
         if (workspaceId) {
             try {
@@ -98,30 +87,19 @@ async function initUpload(req,res) {
 
         let storageData;
         try {
-            const response = await axios.post(`${STORAGE_SERVICE_URL}/api/storage/multipart/init`,{filename, mimeType, totalChunks});
+            const response = await axios.post(`${STORAGE_SERVICE_URL}/api/storage/multipart/init`,{objectName, mimeType, totalChunks});
             storageData = response.data.data;
         } catch(err) {
             return res.status(500).json({message: 'Cannot connect to storage-service'});
-        }
-
-        try {
-            await addJob(
-                queueForEvent(EVENTS.FILE_UPLOAD),
-                EVENTS.FILE_UPLOAD,
-                {filename, totalChunks, mimeType, sizeBytes, workspaceId, folderId, uploadedBy: userId},
-                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_UPLOAD, storageData.uploadId)}
-            );
-        } catch(jobErr) {
-            console.error('[Queue Error] Failed to enqueue FILE_UPLOAD job', jobErr);
         }
 
         return res.status(201).json({
             message: "Init upload successfully",
             data: {
                 uploadId:     storageData.uploadId,
-                objectName:   storageData.objectName,
+                objectName,
                 presignedUrls: storageData.presignedURLs,
-                meta: {filename, mimeType, sizeBytes, workspaceId, folderId },
+                meta: {objectName, mimeType, sizeBytes, workspaceId, folderId },
             },
         });
     } catch(err) {
@@ -133,7 +111,7 @@ async function initUpload(req,res) {
 async function mergeUpload(req,res) {
     try {
         const userId = req.user.userId;
-        const {uploadId, etags, objectName, filename, totalChunks,
+        const {uploadId, etags, minioObjectPath, objectName, totalChunks,
             mimeType, hashString ,sizeBytes, workspaceId, folderId} = req.body;
         
         try {
@@ -147,14 +125,14 @@ async function mergeUpload(req,res) {
         if (!physicalFile) {
             physicalFile = await PhysicalFile.create({
                 hashString,
-                minioObjectPath: objectName,
+                minioObjectPath,
                 sizeBytes,
                 mimeType,
             });
         }
 
         const file = await Document.create({
-            originalName: filename,
+            originalName: objectName,
             workspaceId: workspaceId || null,
             folderId: folderId || null,
             physicalFileId: physicalFile._id,
@@ -165,7 +143,20 @@ async function mergeUpload(req,res) {
             await addJob(
                 queueForEvent(EVENTS.FILE_MERGED),
                 EVENTS.FILE_MERGED,
-                {uploadId, etags, objectName, filename, totalChunks,mimeType, hashString ,sizeBytes, workspaceId, folderId, uploadedBy: userId},
+                {
+                    fileId: file._id.toString(),  
+                    minioObjectPath: minioObjectPath, 
+                    originalName: objectName, 
+                    totalChunks,
+                    mimeType,
+                    sizeBytes,      
+                    hashString,     
+                    workspaceId, 
+                    folderId, 
+                    uploadedBy: userId,
+                    actorId: userId,
+                    isDuplicate: false
+                },
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_MERGED, file._id.toString())}
             );
         } catch(jobErr) {
@@ -177,4 +168,8 @@ async function mergeUpload(req,res) {
         return res.status(500).json({message: err.message});
     }
 }
-module.exports = {initUpload, checkHash, mergeUpload};
+module.exports = {
+    initUpload, 
+    checkHash, 
+    mergeUpload
+};

@@ -28,7 +28,11 @@ async function createWorkspace(req,res) {
             await addJob(
                 queueForEvent(EVENTS.WORKSPACE_CREATED),
                 EVENTS.WORKSPACE_CREATED,
-                {workspaceId: workspace._id.toString(), createdBy: userId, workspace: workspace.toObject()},
+                {
+                    workspaceId: workspace._id.toString(), 
+                    createdBy: userId, 
+                    workspace: workspace.toObject()
+                },
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.WORKSPACE_CREATED, workspace._id.toString())}
             );
         } catch (jobErr) {
@@ -120,8 +124,13 @@ async function addMember(req,res) {
             await addJob(
                 queueForEvent(EVENTS.MEMBER_ADDED),
                 EVENTS.MEMBER_ADDED,
-                { workspaceId: workspace._id.toString(), targetUserId: targetUser._id.toString(), email, actoreId: adminId, workspaceName: workspace.name, workspace: workspace.toObject() },
-                { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_ADDED, `${workspace._id.toString()}:${targetUser._id.toString()}`) }
+                { 
+                    workspaceId: workspace._id.toString(), 
+                    targetUserId: targetUser._id.toString(),  
+                    workspaceName: workspace.name,
+                    actorId: adminId,
+                },
+                { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_ADDED, `${workspace._id.toString()}-${targetUser._id.toString()}`) }
             );
         } catch (jobErr) {
             console.error('[Queue Error] Failed to enqueue MEMBER_ADDED job', jobErr);
@@ -162,7 +171,12 @@ async function deleteWorkspace(req,res) {
             await addJob(
                 queueForEvent(EVENTS.WORKSPACE_DELETED),
                 EVENTS.WORKSPACE_DELETED,
-                { workspaceId: workspace._id.toString(), name: workspace.name, actorId: adminId, membersId: workspace.members.map(m => m.userId.toString()) },
+                { 
+                    workspaceId: workspace._id.toString(), 
+                    name: workspace.name, 
+                    actorId: adminId, 
+                    memberIds: workspace.members.map(m => m.userId.toString()) 
+                },
                 { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.WORKSPACE_DELETED, workspace._id.toString()) }
             );
         } catch (jobErr) {
@@ -215,8 +229,14 @@ async function removeMember(req,res) {
             await addJob(
                 queueForEvent(EVENTS.MEMBER_REMOVED),
                 EVENTS.MEMBER_REMOVED,
-                { workspaceId: workspace._id.toString(), targetUserId, removedBy: currentUserId, actorId: currentUserId, workspaceName: workspace.name, workspace: workspace.toObject() },
-                { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_REMOVED, `${workspace._id.toString()}:${targetUserId}`) }
+                { 
+                    workspaceId: workspace._id.toString(), 
+                    targetUserId, 
+                    removedBy: currentUserId, 
+                    actorId: currentUserId, 
+                    workspaceName: workspace.name 
+                },
+                { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_REMOVED, `${workspace._id.toString()}-${targetUserId}`) }
             );
         } catch (jobErr) {
             console.error('[Queue Error] Failed to enqueue MEMBER_REMOVED job', jobErr);
@@ -258,8 +278,14 @@ async function setUserPermission(req,res) {
             await addJob(
                 queueForEvent(EVENTS.MEMBER_PERMISSION),
                 EVENTS.MEMBER_PERMISSION,
-                {workspaceId: workspace._id.toString(), workspaceName: workspace.name, targetUserId: targetUserId, actorId: adminId, newPermissions: targetMember.permissions},
-                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_PERMISSION, `${workspaceId}:${targetUserId}-${Date.now()}`)}
+                {
+                    workspaceId: workspace._id.toString(), 
+                    workspaceName: workspace.name, 
+                    targetUserId: targetUserId, 
+                    actorId: adminId, 
+                    newPermissions: targetMember.permissions?.[0] || 'view'
+                },
+                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_PERMISSION, `${workspaceId}-${targetUserId}-${Date.now()}`)}
             );
         } catch(jobErr) {
             console.error('Queue Error] Failed to enqueue MEMBER_REMOVED job', jobErr);

@@ -1,4 +1,4 @@
-const {ChromaClient, DefaultEmbeddingFunction} = require ('chromadb');
+const {ChromaClient} = require ('chromadb');
 const client = new ChromaClient({path: process.env.CHROMA_URL});
 const COLLECTION_NAME = 'documents';
 
@@ -44,10 +44,16 @@ async function query({embedding, nResults=10, where}) {
         }); 
     } catch(err) {
         if (err.message?.includes('no embeddings') || err.message?.includes('no documents')) {
-            return {ids: [[]], embeddings: [[]], documents: [[]], metadata: [[]]};
+            return {ids: [[]], embeddings: [[]], documents: [[]], metadatas: [[]]};
         }
         throw err;
     }
 }
 
-module.exports = { initCollection, upsert, deleteById, deleteByWorkspace, query};
+module.exports = { 
+    initCollection, 
+    upsert, 
+    deleteById, 
+    deleteByWorkspace, 
+    query
+};

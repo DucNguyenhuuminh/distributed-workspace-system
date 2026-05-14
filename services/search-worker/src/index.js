@@ -1,8 +1,9 @@
 require('dotenv').config();
-const express              = require('express');
-const { initCollection }   = require('./config/chroma.config');
-const { startAllConsumers } = require('./consumers');
-const { closeAllWorkers }  = require('shared');
+const express = require('express');
+const mongoose = require('mongoose');
+const { initCollection } = require('./config/chroma.config');
+const { startAllConsumers } = require('./consumers/index.consumer');
+const { closeAllWorkers } = require('shared');
 const {createBullBoard} = require('@bull-board/api');
 const {BullMQAdapter} = require('@bull-board/api/bullMQAdapter');
 const {ExpressAdapter} = require('@bull-board/express');
@@ -15,7 +16,6 @@ serverAdapter.setBasePath('/admin/queues');
 createBullBoard({
   queues: [
     new BullMQAdapter(getQueue(QUEUES.FILE)),
-    new BullMQAdapter(getQueue(QUEUES.FOLDER)),
     new BullMQAdapter(getQueue(QUEUES.WORKSPACE)),
     new BullMQAdapter(getQueue(QUEUES.NOTIFICATION)),
     new BullMQAdapter(getQueue(QUEUES.SEARCH)),
@@ -25,13 +25,15 @@ createBullBoard({
 
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 app.use('/api/search', require('./routes/search.route'));
+app.use('/api/notifications', require('./routes/noti.route'));
 app.use('/admin/queues', serverAdapter.getRouter());
 
 app.get('/health', (_, res) =>
-  res.json({ status: 'OK', service: 'search-worker' })
+  res.json({ status: 'OK', service: 'search-worker & notification-service' })
 );
 
 app.use((_, res) =>
@@ -49,12 +51,12 @@ async function start() {
   startAllConsumers();
   
   app.listen(process.env.PORT || 3004, () =>
-    console.log(`[search-worker] Running on port ${process.env.PORT}`)
+    console.log(`[search-worker & notification-service] Running on port ${process.env.PORT}`)
   );
 }
 
 async function shutdown() {
-  console.log('[search-worker] Shutting down...');
+  console.log('[search-worker & notification-service] Shutting down...');
   await closeAllWorkers();
   process.exit(0);
 }
@@ -63,6 +65,6 @@ process.on('SIGINT',  shutdown);
 process.on('SIGTERM', shutdown);
 
 start().catch((err) => {
-  console.error('[search-worker] Failed to start:', err.message);
+  console.error('[search-worker & notification-service] Failed to start:', err.message);
   process.exit(1);
 });

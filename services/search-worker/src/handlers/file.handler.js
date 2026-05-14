@@ -1,61 +1,115 @@
-const {EVENTS} = require('shared');
+const {EVENTS, jobIdFor, QUEUES, DEFAULT_JOB_OPTIONS, addJob} = require('shared');
 const chromaService = require('../config/chroma.config');
 const extractService = require('../services/extract.service');
 const embedService = require('../services/embed.service');
 
-async function indexDocument({documentId, objectName, mimeType, workspaceId, uploadedBy}) {
-    if (!extractService.isSupportedMime(mimeType)) {
-        console.log(`[FileHandler] Skipping unsupported MIME type: ${mimeType}`);
-        return;
-    }
+async function indexDocument({fileId, minioObjectPath, mimeType, originalName, workspaceId, uploadedBy}) {
+  if (!fileId) {
+    console.error('[FileHandler] Missing fileId:', {fileId, minioObjectPath});
+    return;
+  }
+  if (!minioObjectPath) {
+    console.error('[FileHandler] Missing minioObjectPath:', {fileId, minioObjectPath});
+  }
+  if (!extractService.isSupportedMime(mimeType)) {
+      console.log(`[FileHandler] Skipping unsupported MIME type: ${mimeType}`);
+      return;
+  }
 
-    const buffer = await extractService.downloadFile(objectName);
+  try {
+    console.log(`[FileHandler] Processing: fileId: ${fileId}, path: ${minioObjectPath}`);
+    const buffer = await extractService.downloadFile(minioObjectPath, originalName);
     const text = await extractService.extract(buffer, mimeType);
 
     if (!text || text.length === 0) {
-        console.log(`[FileHandler]  No text extracted from document ${documentId}`);
+        console.log(`[FileHandler]  No text extracted from document ${fileId}`);
         return;
     }
 
     const embedding = await embedService.embed(text.slice(0,512));
 
     await chromaService.upsert({
-        id: documentId,
+        id: fileId,
         embedding,
         document: text.slice(0, 5000),
-        metadata: {documentId, workspaceId: workspaceId || null, uploadedBy, mimeType},
+        metadata: {fileId, workspaceId: workspaceId || null, uploadedBy, mimeType},
     });
 
-    console.log(`[FileHandler] Indexed: ${documentId}`);
+    console.log(`[FileHandler] Indexed: ${fileId}`);
+  } catch(err) {
+    console.error(`[FileHandler] Failed to index ${fileId}:`,err.message);
+    throw err;
+  }
+}
+
+async function deleteFromChroma(ids) {
+  if (!ids || ids.length === 0) return;
+  for (const id of ids) {
+    if (!id)  continue;
+    try {
+      await chromaService.deleteById(String(id));
+      console.log(`[FileHandler] Deleted from ChromaDB: ${id}`);
+    } catch(err) {
+      console.error(`[FileHandler] Failed to delete ${id} from ChromaDB:`, err.message);
+    }
+  }
+}
+
+const forwardToNotification = async (eventName, data) => {
+  try {
+    const jobId = jobIdFor(`${eventName}_noti`, data.fileId || Date.now());
+    await addJob(QUEUES.NOTIFICATION,eventName,data,{...DEFAULT_JOB_OPTIONS, jobId});
+    console.log(`[FileHandler] Redirect ${eventName} to notification-queue`);
+  } catch(err) {
+    console.error(`[NotificationHandler] Error redirecting ${eventName} to notification-queue:`, err.message);
+  }
 }
 
 //---------HANDLERS---------
 const fileHandlers = {
-  [EVENTS.FILE_UPLOAD]:   async (job) => {
-    console.log(`[FileHandler] FILE_UPLOAD — ${job.data.documentId}`);
-    await indexDocument(job.data);
-  },
   [EVENTS.FILE_MERGED]:   async (job) => {
-    console.log(`[FileHandler] FILE_MERGED — ${job.data.documentId}`);
-    await indexDocument(job.data);
+    const data = job.data;
+    console.log(`[FileHandler] FILE_MERGED —`, {fileId: data.fileId, minioObjectPath: data.minioObjectPath});
+    if (!data.fileId || !data.minioObjectPath) {
+      console.error('[FileHandler] Invalid FILE_MERGED data:', data);
+      return;
+    }
+    await indexDocument(data);
+    await forwardToNotification(EVENTS.FILE_MERGED,job.data);
   },
-  [EVENTS.FILE_RENAMED]:  async (job) => {
-    console.log(`[FileHandler] FILE_RENAMED — ${job.data.documentId}`);
-  },
+
   [EVENTS.FILE_TRASHED]:  async (job) => {
-    const { documentId } = job.data;
-    console.log(`[FileHandler] FILE_TRASHED — ${documentId}`);
-    await chromaService.deleteById(documentId);
+    const { fileId, fileIds } = job.data;
+    const idsToDelete = fileIds? fileIds : fileId;
+    console.log(`[FileHandler] FILE_TRASHED — ${fileId}`);
+    await deleteFromChroma(idsToDelete);
   },
+
   [EVENTS.FILE_RESTORED]: async (job) => {
-    console.log(`[FileHandler] FILE_RESTORED — ${job.data.documentId}`);
-    await indexDocument(job.data);
+    const {fileId, minioObjectPath, mimeType, originalName, workspaceId, uploadedBy} = job.data;
+    console.log(`[FileHandler] FILE_RESTORED — ${fileId}`);
+    await indexDocument({
+      fileId, 
+      minioObjectPath, 
+      mimeType,
+      originalName: originalName || ' ',
+      workspaceId, 
+      uploadedBy 
+    });
   },
+
   [EVENTS.FILE_MOVED]:    async (job) => {
-    const { documentId, objectName, mimeType, newWorkspaceId, uploadedBy } = job.data;
-    console.log(`[FileHandler] FILE_MOVED — ${documentId}`);
-    await chromaService.deleteById(documentId);
-    await indexDocument({ documentId, objectName, mimeType, workspaceId: newWorkspaceId, uploadedBy });
+    const { fileId, minioObjectPath, mimeType, originalName, newWorkspaceId, uploadedBy } = job.data;
+    console.log(`[FileHandler] FILE_MOVED — ${fileId}`);
+    await chromaService.deleteById(fileId);
+    await indexDocument({ 
+      fileId, 
+      minioObjectPath, 
+      mimeType,
+      originalName: originalName || ' ',
+      workspaceId: newWorkspaceId || null, 
+      uploadedBy 
+    });
   },
 };
 

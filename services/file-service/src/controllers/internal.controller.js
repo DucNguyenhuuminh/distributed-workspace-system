@@ -163,5 +163,5 @@ module.exports = {
     restoreByFolders,
     getListFiles, 
     getFileIds,
-    forceDeleteFilesByFolders
+    forceDeleteFilesByFolders,
 };

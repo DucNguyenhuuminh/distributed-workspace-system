@@ -8,5 +8,4 @@ router.put('/by-folders/restore',   restoreByFolders);
 router.delete('by-folders/force',   forceDeleteFilesByFolders)
 router.delete('/by-workspace/:id',  deletedByWorkspace);
 
-
 module.exports = router;

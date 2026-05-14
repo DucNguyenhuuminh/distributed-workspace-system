@@ -85,17 +85,6 @@ async function createFolder(req,res) {
             createdBy: userId,
         });
 
-        try {
-            await addJob(
-                queueForEvent(EVENTS.FOLDER_CREATED),
-                EVENTS.FOLDER_CREATED,
-                {folderId: folder._id.toString(), workspaceId: folder.workspaceId, createdBy: userId, folder: folder.toObject()},
-                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_CREATED, folder._id.toString())}
-            );
-        } catch(jobErr) {
-            console.error('[Queue Error] Failed to enqueue FOLDER_CREATED job', jobErr);
-        }
-
         return res.status(201).json({message: "Created folder successful", data: folder});
     } catch (err) {
         return res.status(500).json({message: err.message});
@@ -244,16 +233,6 @@ async function renameFolder(req,res) {
         folder.name = name;
         await folder.save();
         
-        try {
-            await addJob(
-                queueForEvent(EVENTS.FOLDER_RENAMED),
-                EVENTS.FOLDER_RENAMED,
-                {folderId: folder._id.toString(), newName: name, actorId: userId, workspaceId: folder.workspaceId, folder: folder.toObject()},
-                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_RENAMED, folder._id.toString())}
-            );
-        } catch(jobErr) {
-            console.error('[Queue Error] Failed to enqueue FOLDER_RENAMED job', jobErr);
-        }
         return res.json({message: "Rename successfully", data: folder});
     } catch(err) {
         return res.status(500).json({message: err.message});
@@ -306,17 +285,6 @@ async function deleteFolder(req,res) {
             {_id: {$in: allFolderIds}},
             {deletedAt: new Date()}
         );
-
-        try{
-            await addJob(
-                queueForEvent(EVENTS.FOLDER_TRASHED),
-                EVENTS.FOLDER_TRASHED,
-                {folderId, allFolderIds, actorId: userId, folderName: folder.name, workspaceId: folder.workspaceId},
-                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_TRASHED, folderId)}
-            );
-        } catch(jobErr) {
-            console.error('[Queue Error] Failed to enqueue FOLDER_TRASHED job', jobErr);
-        }
 
         return res.json({message: "Folder deleted successfully"});
     } catch(err) {
@@ -387,17 +355,6 @@ async function restoreFolder(req,res) {
             {_id: {$in: allFoldersIds}},
             {deletedAt: null}
         );
-
-        try {
-            await addJob(
-                queueForEvent(EVENTS.FOLDER_RESTORED),
-                EVENTS.FOLDER_RESTORED,
-                {folderId: folder._id.toString(), allFoldersIds, actorId: userId, folderName: folder.name, workspaceId: folder.workspaceId},
-                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_RESTORED, folder._id.toString())}
-            );
-        } catch(jobErr) {
-            console.log('[Queue Error] Failed to enqueue FOLDER_RESTORED job', jobErr);
-        }
 
         return res.json({message: "Restore folder successfully", data: folder});
     } catch(err) {
@@ -499,17 +456,6 @@ async function moveFolder(req,res) {
         sourceFolder.workspaceId = finalWorkspaceId;
         sourceFolder.createdBy = finalOwnerId;
         await sourceFolder.save();
-
-        try {
-            await addJob(
-                queueForEvent(EVENTS.FOLDER_MOVED),
-                EVENTS.FOLDER_MOVED,
-                {folderId: sourceFolder._id.toString(), newParentId, actorId: userId, newWorkspaceId: finalWorkspaceId, folder: sourceFolder.toObject()},
-                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_MOVED, sourceFolder._id.toString())}
-            );
-        } catch(jobErr) {
-            console.error('[Queue Error] Failed to enqueue FOLDER_MOVED job', jobErr);
-        }
 
         return res.json({message: "Folder moved successfully", data: sourceFolder});
     } catch(err) {

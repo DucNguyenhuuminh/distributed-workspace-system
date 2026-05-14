@@ -9,7 +9,7 @@ async function search(req, res) {
     const userId             = req.user.userId;
 
     if (!q || q.trim().length === 0) {
-      return res.status(400).json({ message: 'Câu hỏi tìm kiếm là bắt buộc' });
+      return res.status(400).json({ message: 'Message search is required' });
     }
 
     if (workspaceId) {
@@ -21,11 +21,11 @@ async function search(req, res) {
           (m) => m.userId.toString() === userId
         );
         if (!isMember) {
-          return res.status(403).json({ message: 'Không có quyền tìm kiếm trong workspace này' });
+          return res.status(403).json({ message: 'You have no permission to look up in this workspace' });
         }
       } catch (err) {
         if (err.response?.status === 404) {
-          return res.status(404).json({ message: 'Workspace không tồn tại' });
+          return res.status(404).json({ message: 'Workspace not exists' });
         }
         return res.status(500).json({ message: 'Cannot connect to workspace-service' });
       }
@@ -52,7 +52,7 @@ async function search(req, res) {
 
     const hits = results.ids[0].map((id, i) => ({
       documentId: id,
-      score:      parseFloat((1 - results.distances[0][i]).toFixed(4)),
+      score: results.distances?.[0]?.[i] !== undefined ? parseFloat((1 - results.distances[0][i]).toFixed(4)) : 0,
       preview:    results.documents[0][i]?.slice(0, 200),
       metadata:   results.metadatas[0][i],
     }));

@@ -56,7 +56,7 @@ describe('[Integration] GET /api/search', () => {
     const res = await request(app).get('/api/search');
     
     expect(res.status).toBe(400);
-    expect(res.body.message).toBe('Câu hỏi tìm kiếm là bắt buộc');
+    expect(res.body.message).toBe('Message search is required');
     expect(embedService.embed).not.toHaveBeenCalled();
     expect(chromaService.query).not.toHaveBeenCalled();
   });
@@ -67,7 +67,7 @@ describe('[Integration] GET /api/search', () => {
     const res = await request(app).get('/api/search?q=AI&workspaceId=ws-999');
     
     expect(res.status).toBe(404);
-    expect(res.body.message).toBe('Workspace không tồn tại');
+    expect(res.body.message).toBe('Workspace not exists');
   });
 
   test('❌ Workspace Service bị sập (Lỗi mạng/500) → 500', async () => {
@@ -88,7 +88,7 @@ describe('[Integration] GET /api/search', () => {
     const res = await request(app).get('/api/search?q=AI&workspaceId=ws-123');
     
     expect(res.status).toBe(403);
-    expect(res.body.message).toBe('Không có quyền tìm kiếm trong workspace này');
+    expect(res.body.message).toBe('You have no permission to look up in this workspace');
   });
 
   // ═══════════════════════════════════════════════════════════

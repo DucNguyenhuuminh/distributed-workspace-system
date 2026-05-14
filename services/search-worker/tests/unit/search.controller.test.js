@@ -45,7 +45,7 @@ describe('Search Controller', () => {
     await search(req, res);
     
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ message: 'Câu hỏi tìm kiếm là bắt buộc' });
+    expect(res.json).toHaveBeenCalledWith({ message: 'Message search is required' });
   });
 
   test('❌ Câu hỏi tìm kiếm chỉ chứa khoảng trắng → 400', async () => {
@@ -61,7 +61,7 @@ describe('Search Controller', () => {
     await search(req, res);
 
     expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ message: 'Workspace không tồn tại' });
+    expect(res.json).toHaveBeenCalledWith({ message: 'Workspace not exists' });
   });
 
   test('❌ Workspace Service bị sập (Axios 500) → 500', async () => {
@@ -84,7 +84,7 @@ describe('Search Controller', () => {
     await search(req, res);
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ message: 'Không có quyền tìm kiếm trong workspace này' });
+    expect(res.json).toHaveBeenCalledWith({ message: 'You have no permission to look up in this workspace' });
   });
 
   // ═══════════════════════════════════════════════════════════

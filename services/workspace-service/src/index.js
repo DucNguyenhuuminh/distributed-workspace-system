@@ -5,6 +5,7 @@ require('./cleanup.worker');
 
 const app = express();
 app.use(express.json());
+
 app.use('/api/workspaces', require('./routes/workspace.routes'));
 app.use('/api/folders', require('./routes/folder.routes'));
 app.get('/health', (_,res) => res.json({status: "OK", service: 'workspace-service'}));

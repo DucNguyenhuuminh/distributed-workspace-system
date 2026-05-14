@@ -22,11 +22,16 @@ const complete_multipart_valid = [body('uploadId').notEmpty().withMessage('Uploa
 const get_downloadURL_valid= [query('objectName').notEmpty().withMessage('Object name is required')
                                                 .isString().withMessage('Object name must be a string'),
                             query('originalName').optional().isString().withMessage('Original name must be a string'),
-                            query('action').optional().isIn(['download', 'preview', 'inline']).withMessage('Action must be download, preview, or inline')
+                            query('action').optional().isIn(['download', 'view', 'inline']).withMessage('Action must be download, preview, or inline')
 ];
 
 const delete_file_valid = [body('objectName').notEmpty().withMessage('Object name is required')
                                             .isString().withMessage('Object name must be a string')
 ];
 
-module.exports = {init_multipart_valid, complete_multipart_valid, get_downloadURL_valid, delete_file_valid};
+module.exports = {
+    init_multipart_valid, 
+    complete_multipart_valid, 
+    get_downloadURL_valid, 
+    delete_file_valid
+};

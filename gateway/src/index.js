@@ -32,9 +32,12 @@ const services = {
     storageService: 'http://127.0.0.1:3005'
 };
 
-app.use('*/internal/*', (req, res) => {
+app.use((req, res, next) => {
+  if (req.path.includes('/internal/')) {
     console.warn(`[SECURITY WARNING] Blocked external access to internal route: ${req.originalUrl}`);
-    res.status(403).json({ message: "API Gateway: Forbidden access to internal routes" });
+    return res.status(403).json({ message: 'Forbidden access to internal routes' });
+  }
+  next();
 });
 
 app.use(createProxyMiddleware({
@@ -62,7 +65,7 @@ app.use(createProxyMiddleware({
 }));
 
 app.use(createProxyMiddleware({
-    pathFilter: ['/api/search'],
+    pathFilter: ['/api/search', '/api/notifications'],
     target: services.searchService,
     changeOrigin: true
 }));
@@ -73,10 +76,10 @@ app.use('*',(req,res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`API Gateway is running at http://127.0.0.1: ${PORT}`);
+    console.log(`API Gateway is running at http://127.0.0.1:${PORT}`);
     console.log(`Direct Auth        -> ${services.authService}`);
-    console.log(`Direct Workpace    -> ${services.workspaceService}`);
-    console.log(`Direct Storage     -> ${services.storageService}`);
     console.log(`Direct File        -> ${services.fileService}`);
-    console.log(`Direct Search      -> ${services.searchService}`)
+    console.log(`Direct Workpace    -> ${services.workspaceService}`);
+    console.log(`Direct Search      -> ${services.searchService}`);
+    console.log(`Direct Storage     -> ${services.storageService}`);
 });

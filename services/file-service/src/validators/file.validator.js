@@ -35,7 +35,7 @@ const getFileLinkValidator = [
         .isMongoId().withMessage('Invalid File ID format'),
     query('action')
         .optional()
-        .isIn(['download', 'preview']).withMessage('Action must be either download or preview')
+        .isIn(['download', 'view']).withMessage('Action must be either download or view')
 ];
 
 // 5. Validator cho API Move File

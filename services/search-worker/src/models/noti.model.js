@@ -1,6 +1,22 @@
 const mongoose = require('mongoose');
 const {EVENTS} = require('shared');
-const eventValues = Object.values(EVENTS);
+const eventValues = [
+  // File
+  'FILE_MERGED',
+  'FILE_RESTORED',
+  // Workspace
+  'WORKSPACE_CREATED',
+  'WORKSPACE_DELETED',
+  'MEMBER_ADDED',
+  'MEMBER_REMOVED',
+  'MEMBER_PERMISSION',
+  // Folder
+  'FOLDER_RESTORED',
+  // User
+  'USER_REGISTERED',
+  // General
+  'GENERAL',
+];
 
 const notiSchema = new mongoose.Schema({
     userId: {
@@ -10,13 +26,12 @@ const notiSchema = new mongoose.Schema({
     },
     actorId: {
         type: String,
-        required:true,
         default: null,
     },
     type: {
       type: String,
       enum: eventValues,
-      required: true,
+      default: 'GENERAL'
     },
     title: {
       type:     String,

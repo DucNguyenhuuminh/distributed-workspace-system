@@ -228,12 +228,23 @@ async function restoreFile(req,res) {
         );
 
         file.deletedAt = null;
+        const physicalFile = await PhysicalFile.findById(file.physicalFileId);
+        if (!physicalFile) {
+            return res.status(404).json({ message: "Physical file not found" });
+        }
 
         try{
             await addJob(
                 queueForEvent(EVENTS.FILE_RESTORED),
                 EVENTS.FILE_RESTORED,
-                {fileId, file, actorId: userId, workspaceId: file.workspaceId},
+                {
+                    fileId, 
+                    minioObjectPath: physicalFile.minioObjectPath,
+                    mimeType: physicalFile.mimeType,
+                    originalName: file.originalName,
+                    workspaceId: file.workspaceId,
+                    uploadedBy: userId
+                },
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_RESTORED, fileId)}
             );
         } catch(jobErr) {
@@ -251,7 +262,7 @@ async function getFileLink(req,res) {
     try {
         const userId = req.user.userId;
         const fileId = req.params.id;
-        const action = req.query.action || 'viewer';
+        const action = req.query.action || 'view';
 
         const file = await Document.findById(fileId).populate('physicalFileId');
         if (!file) {
@@ -357,27 +368,13 @@ async function moveFile(req,res) {
                     mimeType:       physicalFile.mimeType,         
                     newFolderId:    targetFolderId || null,
                     newWorkspaceId: file.workspaceId || null,
-                    uploadedBy:     userId},
+                    actorId: userId,
+                    fileName: file.originalName},
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_MOVED, fileId)}
             );
         } catch(jobErr) {
             console.error('[Queue Error] Failed to enqueue FILE_MOVED job', jobErr);
         }
-
-        await addJob(
-            queueForEvent(EVENTS.FILE_MOVED),
-            EVENTS.FILE_MOVED,
-            {
-                documentId: file._id.toString(),
-                objectName: physicalFile.minioObjectPath,
-                mimeType: physicalFile.mimeType,         
-                newFolderId: targetFolderId || null,
-                newWorkspaceId: file.workspaceId || null,
-                actorId: userId,
-                fileName: file.originalName
-            },
-            {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_RESTORED, fileId)
-        });
 
         return res.json({message: "Move file successfully", data: {file}});
     } catch(err) {
@@ -463,7 +460,7 @@ async function emptyTrash(req, res) {
       await addJob(
         queueForEvent(EVENTS.FILE_TRASHED),
         EVENTS.FILE_TRASHED,
-        { fileIds, actorId: userId },
+        { fileIds, actorId: userId},
         { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_TRASHED, `empty-trash-${userId}`) }
       );
     } catch (jobErr) {
