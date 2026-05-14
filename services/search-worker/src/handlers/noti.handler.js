@@ -16,31 +16,6 @@ const notiHandlers = {
     });
   },
 
-  [EVENTS.FILE_RESTORED]: async (job) => {
-    const { uploadedBy, originalName } = job.data;
-    await notificationService.createNotification({
-      userId:   uploadedBy,
-      actorId:  null,
-      type:     'FILE_RESTORED',
-      title:    'File đã được khôi phục',
-      message:  `File "${originalName}" đã được khôi phục thành công`,
-      metadata: { originalName },
-    });
-  },
-
-  // ── Folder events ─────────────────────────────────────
-  [EVENTS.FOLDER_RESTORED]: async (job) => {
-    const { actorId, folderName } = job.data;
-    await notificationService.createNotification({
-      userId:   actorId,
-      actorId:  null,
-      type:     'FOLDER_RESTORED',
-      title:    'Thư mục đã được khôi phục',
-      message:  `Thư mục "${folderName || 'của bạn'}" đã được khôi phục`,
-      metadata: job.data,
-    });
-  },
-
   // ── Workspace events ──────────────────────────────────
   [EVENTS.WORKSPACE_CREATED]: async (job) => {
     const { workspaceId, createdBy, name } = job.data;

@@ -42,6 +42,10 @@ describe('ChromaDB Configuration & Operations', () => {
     jest.clearAllMocks();
   });
 
+  afterAll(() => {
+    jest.restoreAllMocks();
+  });
+
   // ═══════════════════════════════════════════════════════════
   // TEST KHỞI TẠO COLLECTION
   // ═══════════════════════════════════════════════════════════
@@ -54,7 +58,7 @@ describe('ChromaDB Configuration & Operations', () => {
       expect(collection).toBeDefined();
       expect(mockGetOrCreate).toHaveBeenCalledWith({
         name: 'documents',
-        metadata: { 'hnsw:space': 'cosine' }, // 🟢 Đã bỏ embeddingFunction cho khớp logic thực tế
+        metadata: { 'hnsw:space': 'cosine' },
       });
       expect(console.log).toHaveBeenCalledWith('[ChromaDB] Collection "documents" ready');
     });
@@ -63,7 +67,6 @@ describe('ChromaDB Configuration & Operations', () => {
       const error = new Error('ChromaDB Connection Refused');
       mockGetOrCreate.mockRejectedValueOnce(error);
 
-      // Phải dùng rejects.toThrow() vì hàm này có ném lỗi (throw err) ra ngoài
       await expect(chromaConfig.initCollection()).rejects.toThrow('ChromaDB Connection Refused');
       expect(console.error).toHaveBeenCalledWith('[ChromaDB] Error to init collection: ChromaDB Connection Refused');
     });
@@ -82,7 +85,6 @@ describe('ChromaDB Configuration & Operations', () => {
     });
 
     test('✅ upsert: Gửi đúng định dạng mảng (Gồm cả embedding)', async () => {
-      // 🟢 Đổi tên hàm thành upsert, thêm thuộc tính embedding
       const payload = { id: 'doc-123', embedding: [0.1, 0.2, 0.3], document: 'Hello AI', metadata: { source: 'pdf' } };
       await chromaConfig.upsert(payload);
 
@@ -105,10 +107,8 @@ describe('ChromaDB Configuration & Operations', () => {
     });
 
     test('✅ query: Xử lý đúng khi CÓ truyền điều kiện "where"', async () => {
-      // Giả lập kết quả trả về từ ChromaDB
       mockCollection.query.mockResolvedValueOnce({ ids: [['doc-result']] });
       
-      // 🟢 Sửa tham số text thành embedding
       const result = await chromaConfig.query({ 
         embedding: [0.5, 0.6], 
         nResults: 5, 
@@ -116,7 +116,7 @@ describe('ChromaDB Configuration & Operations', () => {
       });
       
       expect(mockCollection.query).toHaveBeenCalledWith({
-        queryEmbeddings: [[0.5, 0.6]], // Đổi từ queryTexts sang queryEmbeddings
+        queryEmbeddings: [[0.5, 0.6]], 
         nResults: 5,
         where: { workspaceId: 'ws-abc' },
       });
@@ -126,29 +126,50 @@ describe('ChromaDB Configuration & Operations', () => {
     test('✅ query: Xử lý an toàn tham số mặc định (KHÔNG truyền where, nResults)', async () => {
       mockCollection.query.mockResolvedValueOnce({ ids: [['doc-result']] });
       
-      // 🟢 Chỉ truyền embedding, bỏ where và nResults
+      // Chỉ truyền embedding, bỏ where và nResults
       await chromaConfig.query({ embedding: [0.1, 0.2] }); 
       
       expect(mockCollection.query).toHaveBeenCalledWith({
         queryEmbeddings: [[0.1, 0.2]],
-        nResults: 10, // nResults phải nhận giá trị mặc định là 10
-        where: undefined, // where tự động fallback về undefined
+        nResults: 10, // Mặc định là 10
+        where: undefined, // Mặc định là undefined
       });
     });
 
-    test('✅ query: Bắt lỗi an toàn nếu collection rỗng (no embeddings / no documents)', async () => {
-      // Giả lập ChromaDB ném ra lỗi Collection rỗng
-      mockCollection.query.mockRejectedValueOnce(new Error('no embeddings present'));
+    test('✅ query: Bắt lỗi an toàn trả về mảng rỗng nếu collection chưa có dữ liệu (no embeddings)', async () => {
+      // Giả lập lỗi collection rỗng từ ChromaDB
+      mockCollection.query.mockRejectedValueOnce(new Error('Collection has no embeddings'));
       
       const result = await chromaConfig.query({ embedding: [0.1, 0.2] }); 
       
-      // Đảm bảo nhánh catch hoạt động trả về mảng rỗng thay vì throw error
       expect(result).toEqual({
         ids: [[]], 
         embeddings: [[]], 
         documents: [[]], 
         metadatas: [[]]
       });
+    });
+
+    test('✅ query: Bắt lỗi an toàn trả về mảng rỗng nếu (no documents)', async () => {
+      // Giả lập lỗi collection rỗng từ ChromaDB
+      mockCollection.query.mockRejectedValueOnce(new Error('no documents found'));
+      
+      const result = await chromaConfig.query({ embedding: [0.1, 0.2] }); 
+      
+      expect(result).toEqual({
+        ids: [[]], 
+        embeddings: [[]], 
+        documents: [[]], 
+        metadatas: [[]]
+      });
+    });
+
+    test('❌ query: Ném ra lỗi (throw error) nếu gặp các lỗi hệ thống khác', async () => {
+      // Giả lập lỗi hệ thống (ví dụ sập mạng)
+      mockCollection.query.mockRejectedValueOnce(new Error('Network Timeout'));
+      
+      await expect(chromaConfig.query({ embedding: [0.1, 0.2] }))
+        .rejects.toThrow('Network Timeout');
     });
   });
 });

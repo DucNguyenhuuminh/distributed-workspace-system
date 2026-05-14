@@ -2,9 +2,9 @@ const { body } = require('express-validator');
 
 // 1. Validator cho API Check Hash (Deduplication)
 const checkHashValidator = [
-    body('filename')
-        .notEmpty().withMessage('Filename is required')
-        .isString().withMessage('Filename must be a string')
+    body('objectName')
+        .notEmpty().withMessage('Object name is required')
+        .isString().withMessage('Object name must be a string')
         .trim(),
     body('hashString')
         .notEmpty().withMessage('Hash string is required')
@@ -19,9 +19,9 @@ const checkHashValidator = [
 
 // 2. Validator cho API Init Upload
 const initUploadValidator = [
-    body('filename')
-        .notEmpty().withMessage('Filename is required')
-        .isString().withMessage('Filename must be a string')
+    body('objectName')
+        .notEmpty().withMessage('Object name is required')
+        .isString().withMessage('Object name must be a string')
         .trim(),
     body('totalChunks')
         .notEmpty().withMessage('Total chunks is required')
@@ -45,6 +45,9 @@ const mergeUploadValidator = [
     body('uploadId')
         .notEmpty().withMessage('Upload ID is required')
         .isString().withMessage('Upload ID must be a string'),
+    body('minioObjectPath')
+        .notEmpty().withMessage('Object path is required')
+        .isString().withMessage('Object path must be a string'),
     body('objectName')
         .notEmpty().withMessage('Object name is required')
         .isString().withMessage('Object name must be a string'),
@@ -60,9 +63,6 @@ const mergeUploadValidator = [
         .isString().withMessage('ETag must be a string'),
 
     // Các thông tin Metadata để lưu Database
-    body('filename')
-        .notEmpty().withMessage('Filename is required')
-        .isString().withMessage('Filename must be a string'),
     body('hashString')
         .notEmpty().withMessage('Hash string is required')
         .isString().withMessage('Hash string must be a string'),

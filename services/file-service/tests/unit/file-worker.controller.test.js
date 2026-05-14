@@ -1,365 +1,348 @@
-// ── 1. Import Mocks trước khi require Controller ──────────────
+// ── 1. Mock External Services ─────────────────────────────
 jest.mock('axios');
-jest.mock('shared', () => ({
-  addJob: jest.fn().mockResolvedValue({ id: 'job-mock' }),
-  queueForEvent: jest.fn((e) => `queue:${e}`),
-  jobIdFor: jest.fn((e, id) => `${e}:${id}`),
-  EVENTS: { FILE_MERGED: 'file.merged' },  // ✅ Khớp controller
-  DEFAULT_JOB_OPTIONS: { attempts: 3 },
-  verifyToken: (req, res, next) => next(),
-  validateRequest: (req, res, next) => next(),
-}));
 
-jest.mock('../../src/models/documents.model', () => require('./mocks/models.mock').DocumentMock);
-jest.mock('../../src/models/physical-file.model', () => require('./mocks/models.mock').PhysicalFileMock);
+jest.mock('shared', () => {
+  const { validationResult } = require('express-validator');
 
-const axios = require('axios');
-const { addJob, queueForEvent, jobIdFor, EVENTS } = require('shared');
-const { DocumentMock: Document, PhysicalFileMock: PhysicalFile, getFreshDocument, getFreshPhysicalFile } = require('./mocks/models.mock');
-
-// ── Import Controllers SAU khi mock ────────────────────────
-const { checkHash, initUpload, mergeUpload } = require('../../src/controllers/file-worker.controller');
-
-const request = require('supertest');
-const express = require('express');
-
-// ── 2. Helper functions ────────────────────────────────────
-function createReqRes(userId = 'user-001') {
-  const req = {
-    user: { userId },
-    headers: { authorization: 'Bearer test-token' },
-    body: {}
+  return {
+    addJob:              jest.fn().mockResolvedValue({ id: 'job-mock' }),
+    queueForEvent:       jest.fn((e) => `queue:${e}`),
+    jobIdFor:            jest.fn((e, id) => `${e}_${id}`),
+    EVENTS: {
+      FILE_UPLOAD:   'file.upload',
+      FILE_MERGED:   'file.merged',
+      FILE_TRASHED:  'file.trashed',
+    },
+    DEFAULT_JOB_OPTIONS: { attempts: 3 },
+    verifyToken: (req, res, next) => next(), 
+    validateRequest: (req, res, next) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          message: errors.array()[0].msg,
+          errors:  errors.array(),
+        });
+      }
+      next();
+    },
   };
-  const res = {
-    status: jest.fn().mockReturnThis(),
-    json: jest.fn().mockReturnThis(),
-    locals: {}
-  };
-  return { req, res };
-}
+});
 
+const request    = require('supertest');
+const express    = require('express');
+const mongoose   = require('mongoose');
+const { MongoMemoryServer } = require('mongodb-memory-server');
+const axios      = require('axios');
+const { addJob } = require('shared');
+
+// ── 2. Setup MongoDB in-memory ────────────────────────────
+let mongod;
+
+const USER_ID = new mongoose.Types.ObjectId().toString();
+const VALID_WS_ID = new mongoose.Types.ObjectId().toString();
+const ERROR_WS_ID = new mongoose.Types.ObjectId().toString();
+
+beforeAll(async () => {
+  mongod = await MongoMemoryServer.create();
+  await mongoose.connect(mongod.getUri());
+});
+
+beforeEach(() => {
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
+
+afterEach(async () => {
+  const collections = mongoose.connection.collections;
+  for (const key in collections) {
+    await collections[key].deleteMany({});
+  }
+  jest.restoreAllMocks();
+});
+
+afterAll(async () => {
+  await mongoose.connection.dropDatabase();
+  await mongoose.connection.close();
+  await mongod.stop();
+});
+
+const Document     = require('../../src/models/documents.model');
+const PhysicalFile = require('../../src/models/physical-file.model');
+const fileWorkerRoutes = require('../../src/routes/file-worker.routes');
+
+// ── 3. Tạo app ────────────────────────────────────────────
 function createApp() {
   const app = express();
   app.use(express.json());
+
   app.use((req, res, next) => {
-    req.user = { userId: 'user-001' };
+    req.user                  = { userId: USER_ID };
     req.headers.authorization = 'Bearer test-token';
     next();
   });
+
+  app.use(fileWorkerRoutes); 
+  app.use('/api/files-worker', fileWorkerRoutes);
+  
   return app;
 }
 
-// ── Setup/Teardown ─────────────────────────────────────────
-beforeAll(() => jest.spyOn(console, 'error').mockImplementation(() => {}));
-afterAll(() => console.error.mockRestore());
-afterEach(() => jest.clearAllMocks());
-
 // ═══════════════════════════════════════════════════════════
-// checkHash
+// POST /api/files-worker/hash
 // ═══════════════════════════════════════════════════════════
-describe('checkHash', () => {
-  const { req, res } = createReqRes();
-
-  beforeEach(() => {
-    req.body = {};
-    jest.clearAllMocks();
-  });
+describe('[Integration] POST /api/files-worker/hash', () => {
+  const app          = createApp();
+  // 🟢 ĐÃ FIX: Dùng objectName thay thế hoàn toàn cho filename
+  const validPayload = { objectName: 'report.pdf', hashString: 'abc-123-hash' };
 
   test('❌ Thiếu hashString → 400', async () => {
-    req.body = { filename: 'test.pdf' };
-    await checkHash(req, res);
-    
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ message: 'Hash string is required' });
+    const res = await request(app).post('/api/files-worker/hash').send({ objectName: 'test.pdf' });
+    expect(res.status).toBe(400);
   });
 
-  test('✅ File mới → 200 {isDuplicate: false}', async () => {
-    req.body = { filename: 'test.pdf', hashString: 'new-hash' };
-    PhysicalFile.findOne.mockResolvedValue(null);
-    
-    await checkHash(req, res);
-    
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenLastCalledWith({
-      message: 'File is new. Proceed to multipart upload',
-      data: { isDuplicate: false }
-    });
-    expect(PhysicalFile.findOne).toHaveBeenCalledWith({ hashString: 'new-hash' });
+  test('❌ Thiếu objectName → 400', async () => {
+    const res = await request(app).post('/api/files-worker/hash').send({ hashString: 'abc-123' });
+    expect(res.status).toBe(400);
   });
 
-  test('✅ Trùng hash My Drive → Tạo Document + addJob → 200', async () => {
-    const physFile = getFreshPhysicalFile();
-    const docFile = getFreshDocument();
-    
-    req.body = { filename: 'test.pdf', hashString: 'dup-hash' };
-    PhysicalFile.findOne.mockResolvedValue(physFile);
-    Document.create.mockResolvedValue(docFile);
-
-    await checkHash(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenLastCalledWith({
-      message: 'Deduplication successful. File copy instantly',
-      data: { document: docFile, isDuplicate: true }
-    });
-    
-    // ✅ Kiểm tra Document.create
-    expect(Document.create).toHaveBeenCalledWith({
-      originalName: 'test.pdf',
-      workspaceId: null,
-      folderId: null,
-      physicalFileId: physFile._id,
-      uploadedBy: 'user-001'
-    });
-
-    // ✅ Kiểm tra addJob với đúng params
-    expect(addJob).toHaveBeenCalledWith(
-      `queue:${EVENTS.FILE_MERGED}`,  // queueForEvent
-      EVENTS.FILE_MERGED,             // 'file.merged'
-      expect.objectContaining({
-        fileId: docFile._id.toString(),
-        isDuplicate: true,
-        originalName: 'test.pdf',
-        hashString: 'dup-hash'
-      }),
-      expect.objectContaining({
-        jobId: `${EVENTS.FILE_MERGED}:${docFile._id.toString()}`
-      })
-    );
+  test('✅ File mới (chưa có hash trong DB) → 200', async () => {
+    const res = await request(app).post('/api/files-worker/hash').send(validPayload);
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe('File is new. Proceed to multipart upload');
+    expect(res.body.data.isDuplicate).toBe(false);
   });
 
-  test('✅ Trùng hash Workspace (có quyền) → 200', async () => {
-    const physFile = getFreshPhysicalFile();
-    req.body = { filename: 'ws.pdf', hashString: 'ws-hash', workspaceId: 'ws-123' };
-    PhysicalFile.findOne.mockResolvedValue(physFile);
-    Document.create.mockResolvedValue(getFreshDocument());
-    
+  test('✅ Trùng hash My Drive → Dedup thành công → 200', async () => {
+    const physFile = await PhysicalFile.create({
+      hashString:      'abc-123-hash',
+      minioObjectPath: 'file/test.pdf',
+      sizeBytes:       1024,
+      mimeType:        'application/pdf',
+    });
+
+    const res = await request(app).post('/api/files-worker/hash').send(validPayload);
+    expect(res.status).toBe(200);
+    expect(res.body.data.isDuplicate).toBe(true);
+
+    const newDoc = await Document.findOne({ physicalFileId: physFile._id });
+    expect(newDoc).not.toBeNull();
+    expect(newDoc.uploadedBy.toString()).toBe(USER_ID);
+    expect(newDoc.originalName).toBe('report.pdf'); // Đảm bảo lưu đúng tên
+  });
+
+  test('✅ Trùng hash trong Workspace (có quyền editor) → 200', async () => {
+    await PhysicalFile.create({
+      hashString:      'abc-123-hash',
+      minioObjectPath: 'file/ws.pdf',
+      sizeBytes:       1024,
+      mimeType:        'application/pdf',
+    });
+
     axios.get.mockResolvedValue({
-      data: { data: { members: [{ userId: 'user-001', permissions: ['editor'] }] } }
+      data: { data: { members: [{ userId: USER_ID, permissions: ['editor'] }] } }
     });
 
-    await checkHash(req, res);
-    expect(res.status).toHaveBeenCalledWith(200);
+    const res = await request(app).post('/api/files-worker/hash').send({ ...validPayload, workspaceId: VALID_WS_ID });
+    expect(res.status).toBe(200);
   });
 
-  test('❌ Workspace không có quyền → 403', async () => {
-    req.body = { filename: 'test.pdf', hashString: 'hash', workspaceId: 'ws-123' };
-    PhysicalFile.findOne.mockResolvedValue(getFreshPhysicalFile());
-    
+  test('❌ Trùng hash trong Workspace (chỉ viewer) → 403', async () => {
+    await PhysicalFile.create({
+      hashString:      'abc-123-hash',
+      minioObjectPath: 'file/ws.pdf',
+      sizeBytes:       1024,
+      mimeType:        'application/pdf',
+    });
+
     axios.get.mockResolvedValue({
-      data: { data: { members: [{ userId: 'user-001', permissions: ['viewer'] }] } }
+      data: { data: { members: [{ userId: USER_ID, permissions: ['viewer'] }] } }
     });
 
-    await checkHash(req, res);
-    expect(res.status).toHaveBeenCalledWith(403);
+    const res = await request(app).post('/api/files-worker/hash').send({ ...validPayload, workspaceId: ERROR_WS_ID });
+    expect(res.status).toBe(403);
   });
 
-  test('✅ addJob lỗi → Vẫn 200 (Document đã tạo)', async () => {
-    const physFile = getFreshPhysicalFile();
-    const docFile = getFreshDocument();
-    
-    req.body = { filename: 'test.pdf', hashString: 'hash' };
-    PhysicalFile.findOne.mockResolvedValue(physFile);
-    Document.create.mockResolvedValue(docFile);
-    addJob.mockRejectedValueOnce(new Error('Redis down'));
+  test('❌ Workspace API trả 403 → 403', async () => {
+    await PhysicalFile.create({
+      hashString:      'abc-123-hash',
+      minioObjectPath: 'file/ws.pdf',
+      sizeBytes:       1024,
+      mimeType:        'application/pdf',
+    });
 
-    await checkHash(req, res);
-    
-    expect(res.status).toHaveBeenCalledWith(200);  // ✅ Vẫn success
-    expect(console.error).toHaveBeenCalled();      // ✅ Log lỗi job
+    const err = new Error('Forbidden'); err.response = { status: 403 };
+    axios.get.mockRejectedValue(err);
+
+    const res = await request(app).post('/api/files-worker/hash').send({ ...validPayload, workspaceId: ERROR_WS_ID });
+    expect(res.status).toBe(403);
+  });
+
+  test('❌ Workspace API bị sập → 500', async () => {
+    await PhysicalFile.create({
+      hashString:      'abc-123-hash',
+      minioObjectPath: 'file/ws.pdf',
+      sizeBytes:       1024,
+      mimeType:        'application/pdf',
+    });
+
+    axios.get.mockRejectedValue(new Error('Network Error'));
+    const res = await request(app).post('/api/files-worker/hash').send({ ...validPayload, workspaceId: ERROR_WS_ID });
+    expect(res.status).toBe(500);
   });
 });
 
 // ═══════════════════════════════════════════════════════════
-// initUpload  
+// POST /api/files-worker/init
 // ═══════════════════════════════════════════════════════════
-describe('initUpload', () => {
-  const { req, res } = createReqRes();
+describe('[Integration] POST /api/files-worker/init', () => {
+  const app          = createApp();
+  // 🟢 ĐÃ FIX: Dùng objectName thay thế hoàn toàn cho filename
+  const validPayload = { objectName: 'test.mp4', totalChunks: 3, mimeType: 'video/mp4', sizeBytes: 5000 };
 
-  beforeEach(() => {
-    req.body = {};
-    jest.clearAllMocks();
+  test('❌ Thiếu objectName → 400', async () => {
+    const res = await request(app).post('/api/files-worker/init').send({ totalChunks: 3, mimeType: 'video/mp4', sizeBytes: 5000 });
+    expect(res.status).toBe(400);
   });
 
-  test('✅ My Drive → Gọi Storage Service → 201', async () => {
-    req.body = {
-      filename: 'test.pdf',
-      totalChunks: 3,
-      mimeType: 'application/pdf',
-      sizeBytes: 1024
-    };
-    
-    const storageResponse = {
-      data: {
-        data: {
-          uploadId: 'up-123',
-          objectName: 'file/test.pdf',
-          presignedURLs: ['url1', 'url2']
-        }
-      }
-    };
-    axios.post.mockResolvedValue(storageResponse);
+  test('❌ Thiếu totalChunks → 400', async () => {
+    const res = await request(app).post('/api/files-worker/init').send({ objectName: 'test.mp4', mimeType: 'video/mp4', sizeBytes: 5000 });
+    expect(res.status).toBe(400);
+  });
 
-    await initUpload(req, res);
-
-    // 🟢 ĐÃ FIX: Xóa tham số expect.any(Object) thứ 3 vì controller chỉ gọi 2 tham số
-    expect(axios.post).toHaveBeenCalledWith(
-      expect.stringContaining('/storage/multipart/init'),
-      { filename: 'test.pdf', mimeType: 'application/pdf', totalChunks: 3 }
-    );
-    
-    expect(res.status).toHaveBeenCalledWith(201);
-    expect(res.json).toHaveBeenCalledWith({
-      message: 'Init upload successfully',
-      data: {
-        uploadId: 'up-123',
-        objectName: 'file/test.pdf',
-        presignedUrls: ['url1', 'url2'],  // ✅ Chú ý camelCase
-        meta: req.body
-      }
+  test('✅ Init upload My Drive thành công → 201', async () => {
+    axios.post.mockResolvedValue({
+      data: { data: { uploadId: 'up-minio-123', objectName: 'file/test.mp4', presignedURLs: ['url1'] } } // Chú ý presignedURLs từ DB
     });
+
+    const res = await request(app).post('/api/files-worker/init').send(validPayload);
+    
+    expect(res.status).toBe(201);
+    expect(res.body.data.presignedUrls).toEqual(['url1']);
   });
 
-  test('✅ Workspace có quyền → 201', async () => {
-    req.body = { ...req.body, workspaceId: 'ws-123' };
-    axios.get.mockResolvedValue({ data: { data: { members: [{ userId: 'user-001', role: 'ADMIN' }] } } });
-    axios.post.mockResolvedValue({ data: { data: { uploadId: 'up-ws', objectName: 'ws/test.pdf', presignedURLs: [] } } });
-
-    await initUpload(req, res);
-    expect(res.status).toHaveBeenCalledWith(201);
-  });
-
-  test('❌ Workspace không có quyền → 403', async () => {
-    req.body = { filename: 'test.pdf', workspaceId: 'ws-123' };
+  test('✅ Init upload Workspace thành công (có quyền editor) → 201', async () => {
     axios.get.mockResolvedValue({
-      data: { data: { members: [{ userId: 'user-001', permissions: ['viewer'] }] } }
+      data: { data: { members: [{ userId: USER_ID, permissions: ['editor'] }] } }
+    });
+    axios.post.mockResolvedValue({
+      data: { data: { uploadId: 'up-minio-456', objectName: 'file/ws.mp4', presignedURLs: [] } }
     });
 
-    await initUpload(req, res);
-    expect(res.status).toHaveBeenCalledWith(403);
+    const res = await request(app).post('/api/files-worker/init').send({ ...validPayload, workspaceId: VALID_WS_ID });
+    expect(res.status).toBe(201);
   });
 
-  test('❌ Storage Service lỗi → 500', async () => {
-    req.body = { filename: 'test.pdf', totalChunks: 1, mimeType: 'app/pdf' };
-    axios.post.mockRejectedValue(new Error('Storage down'));
+  test('❌ Init upload Workspace (không có quyền) → 403', async () => {
+    axios.get.mockResolvedValue({
+      data: { data: { members: [{ userId: USER_ID, permissions: ['viewer'] }] } }
+    });
 
-    await initUpload(req, res);
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ message: 'Cannot connect to storage-service' });
+    const res = await request(app).post('/api/files-worker/init').send({ ...validPayload, workspaceId: VALID_WS_ID });
+    expect(res.status).toBe(403);
+  });
+
+  test('❌ Storage Service bị sập → 500', async () => {
+    axios.post.mockRejectedValue(new Error('Storage Service Down'));
+    const res = await request(app).post('/api/files-worker/init').send(validPayload);
+    expect(res.status).toBe(500);
   });
 });
 
 // ═══════════════════════════════════════════════════════════
-// mergeUpload
+// POST /api/files-worker/merge
 // ═══════════════════════════════════════════════════════════
-describe('mergeUpload', () => {
-  const { req, res } = createReqRes();
+describe('[Integration] POST /api/files-worker/merge', () => {
+  const app          = createApp();
+  // 🟢 ĐÃ FIX: Chỉ sử dụng objectName, xóa bỏ hoàn toàn filename
+  const validPayload = {
+    uploadId:        'up-123',
+    etags:           [{ partNumber: 1, etag: 'etag-1' }],
+    objectName:      'final.pdf', 
+    minioObjectPath: 'file/final.pdf', 
+    totalChunks:     2,
+    mimeType:        'application/pdf',
+    hashString:      'unique-hash-999',
+    sizeBytes:       2048,
+  };
 
-  beforeEach(() => {
-    req.body = {};
-    jest.clearAllMocks();
+  test('❌ Thiếu uploadId → 400', async () => {
+    const res = await request(app).post('/api/files-worker/merge').send({ ...validPayload, uploadId: undefined });
+    expect(res.status).toBe(400);
   });
 
-  test('✅ PhysicalFile mới → Tạo PhysicalFile + Document + addJob → 200', async () => {
-    req.body = {
-      uploadId: 'up-123',
-      etags: [{ partNumber: 1, eTag: 'etag1' }],
-      objectName: 'final.pdf',
-      minioObjectPath: 'file/final.pdf',
-      totalChunks: 3,
-      mimeType: 'application/pdf',
-      hashString: 'new-hash',
-      sizeBytes: 2048
-    };
+  test('✅ Merge thành công (PhysicalFile mới) → Lưu DB, đẩy Job + 200', async () => {
+    axios.post.mockResolvedValue({});
+    const res = await request(app).post('/api/files-worker/merge').send(validPayload);
 
-    const physFile = getFreshPhysicalFile();
-    const docFile = getFreshDocument();
-    
-    axios.post.mockResolvedValue({});                    // Storage merge OK
-    PhysicalFile.findOne.mockResolvedValue(null);        // Chưa có
-    PhysicalFile.create.mockResolvedValue(physFile);     // Tạo mới
-    Document.create.mockResolvedValue(docFile);          // Tạo Document
+    expect(res.status).toBe(200);
+    const physFile = await PhysicalFile.findOne({ hashString: 'unique-hash-999' });
+    expect(physFile).not.toBeNull();
 
-    await mergeUpload(req, res);
+    const doc = await Document.findOne({ physicalFileId: physFile._id });
+    expect(doc).not.toBeNull();
+    expect(doc.uploadedBy.toString()).toBe(USER_ID);
+    expect(doc.originalName).toBe('final.pdf');
 
-    // ✅ Storage merge
-    expect(axios.post).toHaveBeenCalledWith(
-      expect.stringContaining('/storage/multipart/complete'),
-      { uploadId: 'up-123', objectName: 'final.pdf', etags: req.body.etags }
-    );
-
-    // ✅ PhysicalFile mới
-    expect(PhysicalFile.create).toHaveBeenCalledWith({
-      hashString: 'new-hash',
-      minioObjectPath: 'file/final.pdf',
-      sizeBytes: 2048,
-      mimeType: 'application/pdf'
-    });
-
-    // 🟢 ĐÃ FIX: Thêm đầy đủ các trường mà controller truyền vào khi tạo Document
-    expect(Document.create).toHaveBeenCalledWith({
-      originalName: 'final.pdf',
-      physicalFileId: physFile._id,
-      workspaceId: null,
-      folderId: null,
-      uploadedBy: 'user-001'
-    });
-
-    // ✅ addJob
     expect(addJob).toHaveBeenCalledWith(
-      `queue:${EVENTS.FILE_MERGED}`,
-      EVENTS.FILE_MERGED,
+      `queue:file.merged`,
+      'file.merged',
       expect.objectContaining({
-        fileId: docFile._id.toString(),
-        isDuplicate: false,  // ✅ Quan trọng
-        totalChunks: 3
+        originalName: 'final.pdf',
+        fileId: doc._id.toString(),
+        isDuplicate: false,
       }),
-      expect.objectContaining({
-        jobId: `${EVENTS.FILE_MERGED}:${docFile._id.toString()}`
-      })
+      expect.any(Object)
     );
-
-    expect(res.status).toHaveBeenCalledWith(200);
   });
 
-  test('✅ PhysicalFile đã có → Chỉ tạo Document → 200', async () => {
-    req.body = { ...req.body, hashString: 'existing-hash' };
-    const existingPhys = getFreshPhysicalFile();
-    const docFile = getFreshDocument();
-    
+  test('✅ Merge khi PhysicalFile đã có sẵn (dedup) → Không tạo thêm PhysicalFile → 200', async () => {
+    const existingPhys = await PhysicalFile.create({
+      hashString:      'duplicate-hash-888',
+      minioObjectPath: 'file/old.pdf',
+      sizeBytes:       2048,
+      mimeType:        'application/pdf',
+    });
+
     axios.post.mockResolvedValue({});
-    PhysicalFile.findOne.mockResolvedValue(existingPhys);
-    Document.create.mockResolvedValue(docFile);
+    const res = await request(app).post('/api/files-worker/merge').send({ ...validPayload, hashString: 'duplicate-hash-888' });
 
-    await mergeUpload(req, res);
-
-    expect(PhysicalFile.create).not.toHaveBeenCalled();  // ✅ Không tạo mới
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.status).toBe(200);
+    const count = await PhysicalFile.countDocuments({ hashString: 'duplicate-hash-888' });
+    expect(count).toBe(1); 
   });
 
-  test('❌ Storage merge lỗi → 500', async () => {
-    req.body = { uploadId: 'up-123', etags: [], objectName: 'test.pdf' };
-    axios.post.mockRejectedValue(new Error('Merge failed'));
+  test('❌ Storage Service merge lỗi → 500 + DB không có dữ liệu rác', async () => {
+    axios.post.mockRejectedValue(new Error('Storage Merge Error'));
+    const res = await request(app).post('/api/files-worker/merge').send(validPayload);
 
-    await mergeUpload(req, res);
-    
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(PhysicalFile.findOne).not.toHaveBeenCalled();  // ✅ Không chạm DB
+    expect(res.status).toBe(500);
+    const count = await Document.countDocuments({});
+    expect(count).toBe(0);
   });
 
-  test('✅ addJob lỗi → Vẫn 200', async () => {
-    req.body = { ...req.body, hashString: 'hash' };
-    const physFile = getFreshPhysicalFile();
-    const docFile = getFreshDocument();
-    
+  test('❌ DB lỗi khi lưu Document → 500', async () => {
     axios.post.mockResolvedValue({});
-    PhysicalFile.findOne.mockResolvedValue(physFile);
-    Document.create.mockResolvedValue(docFile);
-    addJob.mockRejectedValueOnce(new Error('Queue error'));
-
-    await mergeUpload(req, res);
     
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(console.error).toHaveBeenCalled();
+    const createSpy = jest.spyOn(Document, 'create').mockRejectedValueOnce(new Error('DB Timeout'));
+
+    try {
+      const res = await request(app).post('/api/files-worker/merge').send(validPayload);
+      expect(res.status).toBe(500);
+    } finally {
+      createSpy.mockRestore();
+    }
+  });
+
+  test('✅ BullMQ lỗi → vẫn trả 200 (không ảnh hưởng response)', async () => {
+    axios.post.mockResolvedValue({});
+    addJob.mockRejectedValueOnce(new Error('Queue Error'));
+
+    const res = await request(app)
+      .post('/api/files-worker/merge')
+      .send({ ...validPayload, hashString: 'bullmq-test-hash', objectName: 'bullmq.pdf' });
+
+    expect(res.status).toBe(200);
+    
+    const count = await Document.countDocuments({ originalName: 'bullmq.pdf' });
+    expect(count).toBe(1);
   });
 });

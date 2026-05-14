@@ -45,6 +45,22 @@ async function getFileIds(req,res) {
     }
 }
 
+//-------GET /api/files/internal/by-workspace/:id-----------
+async function getWorkspaceTrashedFile(req,res) {
+    try {
+        const workspaceId = req.params.workspaceId;
+
+        const trashedFiles = await File.find({
+            workspaceId: workspaceId,
+            deletedAt: {$ne: null}
+        }).sort({deletedAt: -1});
+
+        return res.json({data: trashedFiles});
+    } catch(err) {
+        return res.status(500).json({message: err.message});
+    }
+}
+
 //-------DELETE /api/files/internal/by-workspace/:id-----------
 async function deletedByWorkspace(req,res) {
     try {
@@ -163,5 +179,6 @@ module.exports = {
     restoreByFolders,
     getListFiles, 
     getFileIds,
-    forceDeleteFilesByFolders
+    forceDeleteFilesByFolders,
+    getWorkspaceTrashedFile
 };

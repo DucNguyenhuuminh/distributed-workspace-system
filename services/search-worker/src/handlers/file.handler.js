@@ -78,10 +78,6 @@ const fileHandlers = {
     await forwardToNotification(EVENTS.FILE_MERGED,job.data);
   },
 
-  [EVENTS.FILE_RENAMED]:  async (job) => {
-    console.log(`[FileHandler] FILE_RENAMED — ${job.data.fileId}`);
-  },
-
   [EVENTS.FILE_TRASHED]:  async (job) => {
     const { fileId, fileIds } = job.data;
     const idsToDelete = fileIds? fileIds : fileId;

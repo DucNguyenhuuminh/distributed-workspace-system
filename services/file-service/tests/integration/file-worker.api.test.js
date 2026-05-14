@@ -91,14 +91,15 @@ function createApp() {
 // ═══════════════════════════════════════════════════════════
 describe('[Integration] POST /api/files-worker/hash', () => {
   const app          = createApp();
-  const validPayload = { filename: 'report.pdf', hashString: 'abc-123-hash' };
+  // 🟢 ĐÃ FIX: Dùng objectName thay thế hoàn toàn cho filename
+  const validPayload = { objectName: 'report.pdf', hashString: 'abc-123-hash' };
 
   test('❌ Thiếu hashString → 400', async () => {
-    const res = await request(app).post('/api/files-worker/hash').send({ filename: 'test.pdf' });
+    const res = await request(app).post('/api/files-worker/hash').send({ objectName: 'test.pdf' });
     expect(res.status).toBe(400);
   });
 
-  test('❌ Thiếu filename → 400', async () => {
+  test('❌ Thiếu objectName → 400', async () => {
     const res = await request(app).post('/api/files-worker/hash').send({ hashString: 'abc-123' });
     expect(res.status).toBe(400);
   });
@@ -125,7 +126,7 @@ describe('[Integration] POST /api/files-worker/hash', () => {
     const newDoc = await Document.findOne({ physicalFileId: physFile._id });
     expect(newDoc).not.toBeNull();
     expect(newDoc.uploadedBy.toString()).toBe(USER_ID);
-    expect(addJob).toHaveBeenCalled();
+    expect(newDoc.originalName).toBe('report.pdf'); // 🟢 Xác minh originalName được gán đúng
   });
 
   test('✅ Trùng hash trong Workspace (có quyền editor) → 200', async () => {
@@ -194,26 +195,27 @@ describe('[Integration] POST /api/files-worker/hash', () => {
 // ═══════════════════════════════════════════════════════════
 describe('[Integration] POST /api/files-worker/init', () => {
   const app          = createApp();
-  const validPayload = { filename: 'test.mp4', totalChunks: 3, mimeType: 'video/mp4', sizeBytes: 5000 };
+  // 🟢 ĐÃ FIX: Dùng objectName thay thế hoàn toàn cho filename
+  const validPayload = { objectName: 'test.mp4', totalChunks: 3, mimeType: 'video/mp4', sizeBytes: 5000 };
 
-  test('❌ Thiếu filename → 400', async () => {
+  test('❌ Thiếu objectName → 400', async () => {
     const res = await request(app).post('/api/files-worker/init').send({ totalChunks: 3, mimeType: 'video/mp4', sizeBytes: 5000 });
     expect(res.status).toBe(400);
   });
 
   test('❌ Thiếu totalChunks → 400', async () => {
-    const res = await request(app).post('/api/files-worker/init').send({ filename: 'test.mp4', mimeType: 'video/mp4', sizeBytes: 5000 });
+    const res = await request(app).post('/api/files-worker/init').send({ objectName: 'test.mp4', mimeType: 'video/mp4', sizeBytes: 5000 });
     expect(res.status).toBe(400);
   });
 
   test('✅ Init upload My Drive thành công → 201', async () => {
     axios.post.mockResolvedValue({
-      data: { data: { uploadId: 'up-minio-123', objectName: 'file/test.mp4', presignedUrls: ['url1'] } }
+      data: { data: { uploadId: 'up-minio-123', objectName: 'file/test.mp4', presignedURLs: ['url1'] } } // API bên dưới hay trả về presignedURLs (chữ hoa)
     });
 
     const res = await request(app).post('/api/files-worker/init').send(validPayload);
     expect(res.status).toBe(201);
-    // 🟢 FIX ĐÃ ÁP DỤNG: Đã xóa expect(addJob) ở đây vì controller mới không còn gọi addJob
+    expect(res.body.data.presignedUrls).toEqual(['url1']); // API của bạn format lại thành presignedUrls
   });
 
   test('✅ Init upload Workspace thành công (có quyền editor) → 201', async () => {
@@ -221,7 +223,7 @@ describe('[Integration] POST /api/files-worker/init', () => {
       data: { data: { members: [{ userId: USER_ID, permissions: ['editor'] }] } }
     });
     axios.post.mockResolvedValue({
-      data: { data: { uploadId: 'up-minio-456', objectName: 'file/ws.mp4', presignedUrls: [] } }
+      data: { data: { uploadId: 'up-minio-456', objectName: 'file/ws.mp4', presignedURLs: [] } }
     });
 
     const res = await request(app).post('/api/files-worker/init').send({ ...validPayload, workspaceId: VALID_WS_ID });
@@ -249,12 +251,12 @@ describe('[Integration] POST /api/files-worker/init', () => {
 // ═══════════════════════════════════════════════════════════
 describe('[Integration] POST /api/files-worker/merge', () => {
   const app          = createApp();
+  // 🟢 ĐÃ FIX: Chỉ sử dụng objectName, xóa bỏ hoàn toàn filename
   const validPayload = {
     uploadId:        'up-123',
     etags:           [{ partNumber: 1, etag: 'etag-1' }],
-    objectName:      'file/final.pdf', 
+    objectName:      'final.pdf', 
     minioObjectPath: 'file/final.pdf', 
-    filename:        'final.pdf',
     totalChunks:     2,
     mimeType:        'application/pdf',
     hashString:      'unique-hash-999',
@@ -266,7 +268,7 @@ describe('[Integration] POST /api/files-worker/merge', () => {
     expect(res.status).toBe(400);
   });
 
-  test('✅ Merge thành công (PhysicalFile mới) → Lưu DB + 200', async () => {
+  test('✅ Merge thành công (PhysicalFile mới) → Lưu DB, đẩy Job + 200', async () => {
     axios.post.mockResolvedValue({});
     const res = await request(app).post('/api/files-worker/merge').send(validPayload);
 
@@ -277,6 +279,18 @@ describe('[Integration] POST /api/files-worker/merge', () => {
     const doc = await Document.findOne({ physicalFileId: physFile._id });
     expect(doc).not.toBeNull();
     expect(doc.uploadedBy.toString()).toBe(USER_ID);
+    expect(doc.originalName).toBe('final.pdf');
+
+    expect(addJob).toHaveBeenCalledWith(
+      `queue:file.merged`,
+      'file.merged',
+      expect.objectContaining({
+        originalName: 'final.pdf',
+        fileId: doc._id.toString(),
+        isDuplicate: false,
+      }),
+      expect.any(Object)
+    );
   });
 
   test('✅ Merge khi PhysicalFile đã có sẵn (dedup) → Không tạo thêm PhysicalFile → 200', async () => {
@@ -307,14 +321,12 @@ describe('[Integration] POST /api/files-worker/merge', () => {
   test('❌ DB lỗi khi lưu Document → 500', async () => {
     axios.post.mockResolvedValue({});
     
-    // 🟢 ĐIỂM CHỐT HẠ: Dùng khối try-finally để chắc chắn 100% Mock được giải phóng
     const createSpy = jest.spyOn(Document, 'create').mockRejectedValueOnce(new Error('DB Timeout'));
 
     try {
       const res = await request(app).post('/api/files-worker/merge').send(validPayload);
       expect(res.status).toBe(500);
     } finally {
-      // Dù test có lỗi gì đi chăng nữa, dòng dọn dẹp này BẮT BUỘC phải chạy
       createSpy.mockRestore();
     }
   });
@@ -323,14 +335,12 @@ describe('[Integration] POST /api/files-worker/merge', () => {
     axios.post.mockResolvedValue({});
     addJob.mockRejectedValueOnce(new Error('Queue Error'));
 
-    // Đổi tên file để đếm chắc chắn 100% kết quả là độc lập
     const res = await request(app)
       .post('/api/files-worker/merge')
-      .send({ ...validPayload, hashString: 'bullmq-test-hash', objectName: 'bullmq.pdf' });
+      .send({ ...validPayload, hashString: 'bullmq-test-hash', objectName: 'bullmq.pdf' }); // 🟢 Dùng objectName
 
     expect(res.status).toBe(200);
     
-    // Vì cái mock ở bài test trước đã bị destroy an toàn, Document.create sẽ chạy bình thường
     const count = await Document.countDocuments({ originalName: 'bullmq.pdf' });
     expect(count).toBe(1);
   });
