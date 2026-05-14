@@ -297,52 +297,6 @@ async function setUserPermission(req,res) {
     }
 }
 
-//-------GET /api/workspaces/:id/trash-----------
-async function getWorkspaceTrash(req,res) {
-    try {
-        const workspaceId = req.params.id;
-        const userId = req.user.userId;
-
-        // check permissions and existed
-        const workspace = await Workspace.findById(workspaceId);
-        if (!workspace) {
-            return res.status(404).json({message: "Workspace not exist"});
-        }
-        const member = workspace.members.find((m) => m.userId.toString() === userId);
-        if (!member) {
-            return res.status(403).json({ message: "You do not have permission to access" });
-        }
-        if (member.role !== "ADMIN" && member.permissions !== "editor") {
-            return res.status(403).json({ message: "Only Editor or Admin can view trash" });
-        }
-        
-        const trashedFolders = await Folder.find({
-            workspaceId: workspaceId,
-            deletedAt: {$ne:null}
-        }).sort({deletedAt: -1});
-
-        let trashedFiles = [];
-        try {
-            const response = await axios.get(`${FILE_SERVICE_URL}/api/files/internal/trash/by-workspace/${workspaceId}`,{
-                headers: {Authorization: req.headers.authorization}
-            });
-            trashedFiles = response.data?.data || [];
-        } catch(err) {
-            console.error('[workspace-service] Error while calling file-service to take trashed files', err.message);
-        }
-
-        return res.json({
-            message: "Get trash successfully",
-            data: {
-                folders: trashedFolders,
-                files: trashedFiles
-            }
-        });
-    } catch(err) {
-        return res.status(500).json({message: err.message});
-    }
-}
-
 module.exports = {
     createWorkspace, 
     addMember, 
@@ -350,6 +304,5 @@ module.exports = {
     getWorkspaces, 
     removeMember, 
     deleteWorkspace, 
-    setUserPermission,
-    getWorkspaceTrash
+    setUserPermission
 };
