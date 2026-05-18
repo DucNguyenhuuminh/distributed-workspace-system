@@ -248,7 +248,7 @@ async function removeMember(req,res) {
     }
 }
 
-//-------PUT /api/workspaces/:id/members/:targetUserId/permission-----------
+//-------PATCH /api/workspaces/:id/members/:targetUserId/permission-----------
 async function setUserPermission(req,res) {
     try {
         const adminId = req.user.userId;

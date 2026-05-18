@@ -617,7 +617,7 @@ describe('DELETE /api/workspaces/:id/members/:targetUserId', () => {
 // ═══════════════════════════════════════════════════════════
 // PUT /api/workspaces/:id/members/:targetUserId/permissions — setUserPermission
 // ═══════════════════════════════════════════════════════════
-describe('PUT /api/workspaces/:id/members/:targetUserId/permission', () => {
+describe('PATCH /api/workspaces/:id/members/:targetUserId/permission', () => {
   const app = createApp();
 
   test('✅ Cập nhật quyền thành công → 200', async () => {
@@ -633,7 +633,7 @@ describe('PUT /api/workspaces/:id/members/:targetUserId/permission', () => {
     
     // 🟢 Đã fix: Gửi đúng định dạng Object JSON
     const res = await request(app)
-      .put(`/api/workspaces/${ws._id}/members/user-002/permission`)
+      .patch(`/api/workspaces/${ws._id}/members/user-002/permission`)
       .send({ permissions: newPermissions });
 
     expect(res.status).toBe(200);
@@ -656,9 +656,8 @@ describe('PUT /api/workspaces/:id/members/:targetUserId/permission', () => {
     Workspace.findById.mockResolvedValue(ws);
     addJob.mockRejectedValueOnce(new Error('Redis Timeout'));
 
-    // 🟢 Đã fix: Gửi Object
     const res = await request(app)
-      .put(`/api/workspaces/${ws._id}/members/user-002/permission`)
+      .patch(`/api/workspaces/${ws._id}/members/user-002/permission`)
       .send({ permissions: 'editor' });
 
     expect(res.status).toBe(200);
@@ -668,7 +667,7 @@ describe('PUT /api/workspaces/:id/members/:targetUserId/permission', () => {
   test('❌ Workspace không tồn tại → 400', async () => {
     Workspace.findById.mockResolvedValue(null);
     const res = await request(app)
-      .put('/api/workspaces/ws-999/members/user-002/permission')
+      .patch('/api/workspaces/ws-999/members/user-002/permission')
       .send({ permissions: 'editor' });
     
     expect(res.status).toBe(400);
@@ -681,7 +680,7 @@ describe('PUT /api/workspaces/:id/members/:targetUserId/permission', () => {
     Workspace.findById.mockResolvedValue(ws);
 
     const res = await request(app)
-      .put(`/api/workspaces/${ws._id}/members/user-not-found/permission`)
+      .patch(`/api/workspaces/${ws._id}/members/user-not-found/permission`)
       .send({ permissions: 'editor' });
     
     expect(res.status).toBe(400);
@@ -697,7 +696,7 @@ describe('PUT /api/workspaces/:id/members/:targetUserId/permission', () => {
     Workspace.findById.mockResolvedValue(ws);
 
     const res = await request(app)
-      .put(`/api/workspaces/${ws._id}/members/user-002/permission`)
+      .patch(`/api/workspaces/${ws._id}/members/user-002/permission`)
       .send({ permissions: 'editor' });
     
     expect(res.status).toBe(403);
@@ -712,7 +711,7 @@ describe('PUT /api/workspaces/:id/members/:targetUserId/permission', () => {
     Workspace.findById.mockResolvedValue(ws);
 
     const res = await request(app)
-      .put(`/api/workspaces/${ws._id}/members/user-002/permission`)
+      .patch(`/api/workspaces/${ws._id}/members/user-002/permission`)
       .send({ permissions: 'editor' });
     
     expect(res.status).toBe(403);
@@ -723,7 +722,7 @@ describe('PUT /api/workspaces/:id/members/:targetUserId/permission', () => {
     Workspace.findById.mockRejectedValue(new Error('DB Query Error'));
     
     const res = await request(app)
-      .put(`/api/workspaces/${ws._id}/members/user-002/permission`)
+      .patch(`/api/workspaces/${ws._id}/members/user-002/permission`)
       .send({ permissions: 'editor' });
     
     expect(res.status).toBe(500);

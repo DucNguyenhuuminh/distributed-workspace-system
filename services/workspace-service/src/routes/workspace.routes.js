@@ -13,6 +13,6 @@ router.get('/:id',                                  getWorkspaceById);
 router.post('/:id/members',                         validate(add_member_valid), addMember);
 router.delete('/:id/members/:targetUserId',         removeMember);
 router.delete('/:id',                               deleteWorkspace);
-router.put('/:id/members/:targetUserId/permission', setUserPermission);
+router.patch('/:id/members/:targetUserId/permission', setUserPermission);
 
 module.exports = router;

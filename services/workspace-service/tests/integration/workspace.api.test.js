@@ -450,7 +450,7 @@ describe('[Integration] DELETE /api/workspaces/:id/members/:targetUserId', () =>
 // ═══════════════════════════════════════════════════════════
 // PUT /api/workspaces/:id/members/:targetUserId/permissions
 // ═══════════════════════════════════════════════════════════
-describe('[Integration] PUT /api/workspaces/:id/members/:targetUserId/permission', () => {
+describe('[Integration] PATCH /api/workspaces/:id/members/:targetUserId/permission', () => {
   const app = createApp();
 
   test('✅ Đổi quyền thành công — lưu quyền mới vào MongoDB', async () => {
@@ -460,7 +460,7 @@ describe('[Integration] PUT /api/workspaces/:id/members/:targetUserId/permission
     // 🟢 Mẹo nhỏ: Để gửi dữ liệu thô (String) dưới dạng JSON trong supertest, 
     // ta phải đóng dấu ngoặc kép "" xung quanh giá trị chuỗi đó
     const res = await request(app)
-      .put(`/api/workspaces/${ws._id}/members/${MEMBER_ID}/permission`)
+      .patch(`/api/workspaces/${ws._id}/members/${MEMBER_ID}/permission`)
       .set('Authorization', 'Bearer token-admin')
       .set('Content-Type', 'application/json')
       .send({ permissions: newPermissions }); 
@@ -479,7 +479,7 @@ describe('[Integration] PUT /api/workspaces/:id/members/:targetUserId/permission
   test('❌ Workspace không tồn tại trong DB → 400', async () => {
     const fakeId = new mongoose.Types.ObjectId();
     const res = await request(app)
-      .put(`/api/workspaces/${fakeId}/members/${MEMBER_ID}/permission`)
+      .patch(`/api/workspaces/${fakeId}/members/${MEMBER_ID}/permission`)
       .set('Authorization', 'Bearer token-admin')
       .set('Content-Type', 'application/json')
       .send({ permissions: 'editor' });
@@ -492,7 +492,7 @@ describe('[Integration] PUT /api/workspaces/:id/members/:targetUserId/permission
     const ws = await seedWorkspace();
     
     const res = await request(app)
-      .put(`/api/workspaces/${ws._id}/members/${OUTSIDER_ID}/permission`)
+      .patch(`/api/workspaces/${ws._id}/members/${OUTSIDER_ID}/permission`)
       .set('Authorization', 'Bearer token-admin')
       .set('Content-Type', 'application/json')
       .send({ permissions: 'editor' });
@@ -505,7 +505,7 @@ describe('[Integration] PUT /api/workspaces/:id/members/:targetUserId/permission
     const ws = await seedWorkspace();
     
     const res = await request(app)
-      .put(`/api/workspaces/${ws._id}/members/${ADMIN_ID}/permission`)
+      .patch(`/api/workspaces/${ws._id}/members/${ADMIN_ID}/permission`)
       .set('Authorization', 'Bearer token-member') // Gọi API dưới tư cách MEMBER
       .set('Content-Type', 'application/json')
       .send({ permissions: 'editor' });
@@ -518,7 +518,7 @@ describe('[Integration] PUT /api/workspaces/:id/members/:targetUserId/permission
     const ws = await seedWorkspace();
     
     const res = await request(app)
-      .put(`/api/workspaces/${ws._id}/members/${MEMBER_ID}/permission`)
+      .patch(`/api/workspaces/${ws._id}/members/${MEMBER_ID}/permission`)
       .set('Authorization', 'Bearer token-outsider')
       .set('Content-Type', 'application/json')
       .send({ permissions: 'editor' });

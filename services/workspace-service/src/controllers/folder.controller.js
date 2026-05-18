@@ -395,7 +395,7 @@ async function moveFolder(req,res) {
         }
 
         let finalWorkspaceId = null;
-        let finalOwnerId = userId;
+        let finalOwnerId = sourceFolder.createdBy;
 
         if (newParentId) {
             const targetFolder = await Folder.findById(newParentId);
@@ -404,7 +404,6 @@ async function moveFolder(req,res) {
             }
 
             finalWorkspaceId = targetFolder.workspaceId;
-            finalOwnerId = targetFolder.workspaceId ? null : userId;
 
             if (!targetFolder.workspaceId) {
                 if (targetFolder.createdBy.toString() !== userId) {
@@ -440,7 +439,6 @@ async function moveFolder(req,res) {
                 }
 
                 finalWorkspaceId = targetWorkspaceId;
-                finalOwnerId = null;
             }else {
                 finalWorkspaceId = null;
                 finalOwnerId = userId;
