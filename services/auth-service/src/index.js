@@ -3,9 +3,10 @@ const express  = require('express');
 const mongoose = require('mongoose');
 
 const app = express();
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json());
+
 app.use('/api/auth',require('./routes/auth.routes'));
+app.use('/api/admin',require('./routes/admin.routes'));
 app.get('/healthy', (_,res) => 
     res.json({status: "OK", service: 'auth-service'})
 );

@@ -1,8 +1,8 @@
 const axios = require('axios');
 const Workspace = require('../models/workspace.model');
 const Folder = require('../models/folder.model');
-const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL || 'http://localhost:3002';
-const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://localhost:3001';
+const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL;
+const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL;
 
 const{addJob, queueForEvent, jobIdFor,EVENTS,DEFAULT_JOB_OPTIONS} = require('shared');
 
