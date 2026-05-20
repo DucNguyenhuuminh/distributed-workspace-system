@@ -5,11 +5,11 @@ const bcrypt = require('bcrypt');
 const shareLinkSchema = new mongoose.Schema({
     fileId:{
         type: mongoose.Schema.Types.ObjectId,
-        ref: documentSchema,
-        require: true,
+        ref: 'Documents',
+        required: true,
         index: true
     },
-    workspacId:{
+    workspaceId:{
         type: mongoose.Schema.Types.ObjectId,
         default: null
     },

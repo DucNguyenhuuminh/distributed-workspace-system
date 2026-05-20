@@ -3,18 +3,18 @@ const Document = require('../models/documents.model');
 const ShareLink = require('../models/share.model');
 
 async function validateShareLink(token) {
-    const share = await ShareLink.findOne({token});
+    const shareLink = await ShareLink.findOne({token});
 
-    if (!share) {
+    if (!shareLink) {
         return {error: 404, message: 'Share link not found'};
     }
-    if (share.isRevoked) {
+    if (shareLink.isRevoked) {
         return {error: 403, message: 'Share link has been revoked'};
     }
-    if (share.expiredAt && new Date() > share.expiredAt) {
+    if (shareLink.expiredAt && new Date() > shareLink.expiredAt) {
         return {error: 403, message: 'Share link has expired'};
     }
-    return {share};
+    return {shareLink};
 }
 
 //--------POST /api/files/:id/share----------
@@ -53,7 +53,7 @@ async function createShareLink(req,res) {
 
         const expiredAt = expiresInHours ? new Date(Date.now() + parseInt(expiresInHours)*3600):null;
 
-        const share = await ShareLink.create({
+        const shareLink = await ShareLink.create({
             fileId,
             workspaceId: file.workspaceId || null,
             createdBy: userId,
@@ -69,7 +69,7 @@ async function createShareLink(req,res) {
             mimeType: file.physicalFileId.mimeType
         });
 
-        const shareUrl = `${process.env.FRONTEND_URL}/share/${share.token}`;
+        const shareUrl = `${process.env.FRONTEND_URL}/share/${shareLink.token}`;
 
         return res.json({
             message: 'Share link created successfully',
@@ -203,7 +203,7 @@ async function accessSharedFile(req,res) {
 }
 
 //--------POST /api/files/share/:token/save----------
-async function saveShareLink(req,res) {
+async function saveShareFile(req,res) {
     try {
         const {token} = req.params;
         const {folderId, password} = req.body;
@@ -215,7 +215,7 @@ async function saveShareLink(req,res) {
         }
 
         if (shareLink.password) {
-            const isMatch = await ShareLink.verifyPassword(password);
+            const isMatch = await shareLink.verifyPassword(password || '');
             if (!isMatch) {
                 return res.status(401).json({message: 'Password required or incorrect'});
             }
@@ -244,7 +244,7 @@ async function saveShareLink(req,res) {
         if (alreadySaved) {
             return res.status(409).json({
                 message: 'File already saved',
-                data: {documentId: areadySaved._id}
+                data: {documentId: alreadySaved._id}
             });
         }
 
@@ -310,7 +310,7 @@ module.exports = {
     getSharedFile,
     verifySharePassword,
     accessSharedFile,
-    saveShareLink,
+    saveShareFile,
     getShareLinks,
     revokeShareLink
 }

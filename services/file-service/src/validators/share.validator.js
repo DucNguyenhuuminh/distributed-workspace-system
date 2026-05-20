@@ -33,7 +33,7 @@ const createShareLinkValidator = [
                                     .withMessage('settings.notifyOnAccess must be boolean'),
 ];
 
-const accessSharedLinkValidator = [
+const accessShareLinkValidator = [
     query('action').optional().isIn(['view', 'download']).withMessage('action must be view or download'),
 ];
 
@@ -43,6 +43,6 @@ const verifyPasswordValidator = [
 
 module.exports = {
     createShareLinkValidator, 
-    accessSharedLinkValidator, 
+    accessShareLinkValidator, 
     verifyPasswordValidator
 };

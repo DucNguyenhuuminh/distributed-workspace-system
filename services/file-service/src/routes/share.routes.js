@@ -4,7 +4,7 @@ const {
   getSharedFile,
   verifySharePassword,
   accessSharedFile,
-  saveSharedFile,
+  saveShareFile,
   revokeShareLink,
   getShareLinks,
 } = require('../controllers/share.controller');
@@ -19,7 +19,7 @@ router.use(authMiddleware);
 router.get('/share/:token',         getSharedFile);
 router.post('/share/:token/verify', verifyPasswordValidator, validateRequest, verifySharePassword);
 router.get('/share/:token/access',  accessShareLinkValidator, validateRequest, accessSharedFile);
-router.post('/share/:token/save',   saveSharedFile);
+router.post('/share/:token/save',   saveShareFile);
 router.post('/:id/share',           createShareLinkValidator, validateRequest, createShareLink);
 router.get('/:id/share',            getShareLinks);
 router.delete('/:id/share/:token',  revokeShareLink);
