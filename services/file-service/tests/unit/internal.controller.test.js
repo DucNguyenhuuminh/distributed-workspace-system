@@ -10,33 +10,38 @@ jest.mock('shared', () => ({
 
 // Mock Document model
 jest.mock('../../src/models/documents.model', () => {
-  const mock = {
+  return {
     find: jest.fn(),
+    findById: jest.fn(),
     updateMany: jest.fn(),
-    deleteMany: jest.fn(),      // 🟢 Đảm bảo khởi tạo hàm mock
-    countDocuments: jest.fn(),  // 🟢 Đảm bảo khởi tạo hàm mock
-    findByIdAndDelete: jest.fn()
+    deleteMany: jest.fn(),
+    countDocuments: jest.fn(),
+    findByIdAndDelete: jest.fn(),
+    aggregate: jest.fn() // 🟢 Dùng cho stats
   };
-  return mock;
 });
 
 // Mock PhysicalFile model
 jest.mock('../../src/models/physical-file.model', () => ({
-  findByIdAndDelete: jest.fn()
+  findByIdAndDelete: jest.fn(),
+  countDocuments: jest.fn(), // 🟢 Dùng cho stats
+  aggregate: jest.fn()       // 🟢 Dùng cho stats
 }));
 
 const request = require('supertest');
 const express = require('express');
 const axios = require('axios');
-const Document = require('../../src/models/documents.model'); // Lấy trực tiếp từ mock trên
+const Document = require('../../src/models/documents.model'); 
 const PhysicalFile = require('../../src/models/physical-file.model');
 const internalController = require('../../src/controllers/internal.controller');
 
-// 🟢 Bảo bối smartQuery (Bắt buộc để không lỗi .setOptions)
+// 🟢 Bảo bối smartQuery nâng cấp (Hỗ trợ skip, limit cho admin api)
 const smartQuery = (data) => {
   const query = Promise.resolve(data);
   query.populate = jest.fn().mockReturnValue(query);
   query.sort = jest.fn().mockReturnValue(query);
+  query.skip = jest.fn().mockReturnValue(query);
+  query.limit = jest.fn().mockReturnValue(query);
   query.setOptions = jest.fn().mockReturnValue(query);
   return query;
 };
@@ -50,8 +55,12 @@ function createApp() {
   app.delete('/api/files/internal/by-workspace/:id', internalController.deletedByWorkspace);
   app.delete('/api/files/internal/by-folders', internalController.deletedByFolders);
   app.put('/api/files/internal/by-folders/restore', internalController.restoreByFolders);
-  // Đừng quên route này cho function mới
   app.delete('/api/files/internal/by-folders/force', internalController.forceDeleteFilesByFolders);
+  app.get('/api/files/internal/by-folders/getFiles', internalController.getListFiles);
+  app.get('/api/files/internal/by-searching', internalController.getFileIds);
+  app.get('/api/files/internal/by-admin', internalController.getFilesAdmin);
+  app.get('/api/files/internal/by-admin/:id', internalController.getFileByIdAdmin);
+  app.get('/api/files/internal/stats', internalController.getStats);
 
   return app;
 }
@@ -339,5 +348,165 @@ describe('DELETE /api/files/internal/by-folders/force', () => {
       .send({ folderIds: ['folder-1'] });
 
     expect(res.status).toBe(500);
+  });
+});
+
+describe('GET /api/files/internal/by-folders/getFiles', () => {
+  const app = createApp();
+
+  test('✅ Lấy danh sách file thư mục gốc (folderId = "null") → 200', async () => {
+    Document.find.mockReturnValue(smartQuery([{ _id: 'doc1' }]));
+    const res = await request(app).get('/api/files/internal/by-folders/getFiles').query({ folderId: 'null', deletedAt: 'null' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.length).toBe(1);
+    expect(Document.find).toHaveBeenCalledWith({ folderId: null, deletedAt: null });
+  });
+
+  test('✅ Lấy danh sách file theo id thư mục cụ thể → 200', async () => {
+    Document.find.mockReturnValue(smartQuery([{ _id: 'doc2' }]));
+    const res = await request(app).get('/api/files/internal/by-folders/getFiles').query({ folderId: 'f-123', deletedAt: '2023-01-01' });
+
+    expect(res.status).toBe(200);
+    expect(Document.find).toHaveBeenCalledWith({ folderId: 'f-123', deletedAt: '2023-01-01' });
+  });
+
+  test('❌ DB lỗi → 500', async () => {
+    Document.find.mockImplementation(() => { throw new Error('Query failed'); });
+    const res = await request(app).get('/api/files/internal/by-folders/getFiles');
+    
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('Query failed');
+  });
+});
+
+describe('GET /api/files/internal/by-searching', () => {
+  const app = createApp();
+
+  test('✅ Lấy file qua mảng IDs → 200', async () => {
+    Document.find.mockReturnValue(smartQuery([{ _id: 'f1' }, { _id: 'f2' }]));
+    const res = await request(app).get('/api/files/internal/by-searching').query({ ids: 'f1,f2' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBe(2);
+    expect(Document.find).toHaveBeenCalledWith({ _id: { $in: ['f1', 'f2'] } });
+  });
+
+  test('❌ Không truyền ids hoặc rỗng → 400', async () => {
+    const res = await request(app).get('/api/files/internal/by-searching').query({ ids: '' });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('File id is required');
+  });
+
+  test('❌ DB lỗi → 500', async () => {
+    Document.find.mockImplementation(() => { throw new Error('Search failed'); });
+    const res = await request(app).get('/api/files/internal/by-searching').query({ ids: 'f1' });
+    expect(res.status).toBe(500);
+  });
+});
+
+describe('GET /api/files/internal/by-admin', () => {
+  const app = createApp();
+
+  test('✅ Lấy files kèm phân trang → 200', async () => {
+    Document.countDocuments.mockResolvedValue(50);
+    Document.find.mockReturnValue(smartQuery([{ _id: 'doc1' }]));
+
+    const res = await request(app).get('/api/files/internal/by-admin').query({ page: 2, limit: 10, search: 'Báo cáo', workspaceId: 'ws-1' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.pagination).toEqual({
+      page: 2, limit: 10, total: 50, totalPages: 5
+    });
+    expect(Document.find).toHaveBeenCalledWith({
+      originalName: { $regex: 'Báo cáo', $options: 'i' },
+      workspaceId: 'ws-1'
+    });
+  });
+
+  test('❌ Lỗi tra cứu Admin → 500', async () => {
+    Document.countDocuments.mockRejectedValue(new Error('Count Error'));
+    const res = await request(app).get('/api/files/internal/by-admin');
+    expect(res.status).toBe(500);
+  });
+});
+
+describe('GET /api/files/internal/by-admin/:id', () => {
+  const app = createApp();
+
+  test('✅ Tìm thấy File → 200', async () => {
+    Document.findById.mockReturnValue(smartQuery({ _id: 'doc-123' }));
+    const res = await request(app).get('/api/files/internal/by-admin/doc-123');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data._id).toBe('doc-123');
+  });
+
+  test('❌ Không tìm thấy File → 404', async () => {
+    Document.findById.mockReturnValue(smartQuery(null));
+    const res = await request(app).get('/api/files/internal/by-admin/doc-null');
+
+    expect(res.status).toBe(404);
+    expect(res.body.message).toBe('File not found');
+  });
+
+  test('❌ Lỗi Server → 500', async () => {
+    Document.findById.mockImplementation(() => { throw new Error('ID Cast Error'); });
+    const res = await request(app).get('/api/files/internal/by-admin/doc-err');
+
+    expect(res.status).toBe(500);
+  });
+});
+
+describe('GET /api/files/internal/stats', () => {
+  const app = createApp();
+
+  test('✅ Lấy thống kê hệ thống (Logic tính % và size tiết kiệm đúng) → 200', async () => {
+    Document.countDocuments.mockResolvedValue(100);
+    PhysicalFile.countDocuments.mockResolvedValue(40);
+    
+    // Tổng size thực tế lưu trong ổ cứng: 1,000 bytes
+    PhysicalFile.aggregate.mockResolvedValue([{ totalSizeBytes: 1000 }]);
+    
+    // Tổng size nếu không dùng cơ chế dedup: 1,500 bytes
+    Document.aggregate.mockResolvedValue([{ totalSizeBytesNoDedup: 1500 }]);
+
+    const res = await request(app).get('/api/files/internal/stats');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({
+      totalDocuments: 100,
+      totalPhysicalFiles: 40,
+      totalSizeBytes: 1000,
+      savedSizeBytes: 500, // 1500 - 1000 = 500
+      savedPercentage: 33.33 // (500 / 1500) * 100
+    });
+  });
+
+  test('✅ Hệ thống trắng, không có file nào → Trả về 0 an toàn → 200', async () => {
+    Document.countDocuments.mockResolvedValue(0);
+    PhysicalFile.countDocuments.mockResolvedValue(0);
+    PhysicalFile.aggregate.mockResolvedValue([]); // Rỗng
+    Document.aggregate.mockResolvedValue([]);     // Rỗng
+
+    const res = await request(app).get('/api/files/internal/stats');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({
+      totalDocuments: 0,
+      totalPhysicalFiles: 0,
+      totalSizeBytes: 0,
+      savedSizeBytes: 0,
+      savedPercentage: 0
+    });
+  });
+
+  test('❌ Lỗi Database Aggregate → 500', async () => {
+    Document.countDocuments.mockRejectedValue(new Error('Agg failed'));
+    const res = await request(app).get('/api/files/internal/stats');
+
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('Agg failed');
   });
 });

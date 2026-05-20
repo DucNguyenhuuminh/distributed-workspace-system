@@ -41,7 +41,7 @@ app.use((req, res, next) => {
 });
 
 app.use(createProxyMiddleware({
-    pathFilter: ['/api/auth', 'api/admin'],
+    pathFilter: ['/api/auth', '/api/admin'],
     target: services.authService,
     changeOrigin: true
 }));
