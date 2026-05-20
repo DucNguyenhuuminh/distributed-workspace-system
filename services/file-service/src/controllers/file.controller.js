@@ -60,7 +60,7 @@ async function getFileById(req,res) {
             }
         } else {
             try {
-                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
+                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/internal/${file.workspaceId}`,
                     { headers: { Authorization: req.headers.authorization } });
                 const workspace = response.data?.data;
                 if (!workspace) return res.status(404).json({ message: "Workspace not found" });
@@ -95,7 +95,7 @@ async function renameFile(req,res) {
             }
         }else {
             try {
-                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
+                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/internal/${file.workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}});
                 const workspace = response.data?.data;
                 if (!workspace) return res.status(404).json({ message: "Workspace not found" });
@@ -145,7 +145,7 @@ async function deleteFile(req,res) {
             }
         }else {
             try {
-                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
+                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/internal/${file.workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}});
                 const workspace = response.data?.data;
                 if (!workspace) return res.status(404).json({ message: "Workspace not found" });
@@ -209,7 +209,7 @@ async function restoreFile(req,res) {
             }
         }else {
             try {
-                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
+                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/internal/${file.workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}});
                 const workspace = response.data?.data;
                 if (!workspace) return res.status(404).json({ message: "Workspace not found" });
@@ -275,7 +275,7 @@ async function getFileLink(req,res) {
             }
         }else {
             try {
-                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
+                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/internal/${file.workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}});
                 const workspace = response.data?.data;
                 if (!workspace) return res.status(404).json({ message: "Workspace not found" });
@@ -339,7 +339,7 @@ async function moveFile(req,res) {
             }
         }else {
             try {
-                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
+                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/internal/${file.workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}});
                 const workspace = response.data?.data;
                 if (!workspace) return res.status(404).json({ message: "Workspace not found" });
@@ -392,7 +392,7 @@ async function getTrashedFiles(req,res) {
 
         if (workspaceId) {
             let workspace;
-            const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${workspaceId}`, {
+            const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/internal/${workspaceId}`, {
                 headers: {Authorization: req.headers.authorization}
             });
             workspace = response.data?.data;
@@ -495,8 +495,7 @@ async function forceDeleteFile(req, res) {
       }
     } else {
       try {
-        const response = await axios.get(
-          `${WORKSPACE_SERVICE_URL}/api/workspaces/${file.workspaceId}`,
+        const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/internal/${file.workspaceId}`,
           { headers: { Authorization: req.headers.authorization } }
         );
         const workspace = response.data?.data;

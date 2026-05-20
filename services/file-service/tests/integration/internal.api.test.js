@@ -19,11 +19,28 @@ function createApp() {
   app.delete('/api/files/internal/by-folders', internalController.deletedByFolders);
   app.put('/api/files/internal/by-folders/restore', internalController.restoreByFolders);
   app.delete('/api/files/internal/by-folders/force', internalController.forceDeleteFilesByFolders); 
+  app.get('/api/files/internal/by-folders/getFiles', internalController.getListFiles);
+  app.get('/api/files/internal/by-searching', internalController.getFileIds);
+  app.get('/api/files/internal/by-admin', internalController.getFilesAdmin);
+  app.get('/api/files/internal/stats', internalController.getStats); // Phải để trước /:id
+  app.get('/api/files/internal/by-admin/:id', internalController.getFileByIdAdmin);
 
   return app;
 }
 
 // ── Hàm Seed Data vào Database thật ────────────────────────
+
+// 🟢 ĐÃ FIX: Chuyển hàm seedPhysical ra ngoài cùng để dùng chung cho mọi test case
+async function seedPhysical(overrides = {}) {
+  return PhysicalFile.create({
+    hashString: `hash-${Date.now()}-${Math.random()}`,
+    minioObjectPath: `test-path-${Date.now()}.pdf`,
+    sizeBytes: 1024,
+    mimeType: 'application/pdf',
+    ...overrides
+  });
+}
+
 async function seedDocument(overrides = {}) {
   return Document.create({
     originalName: 'test-internal.pdf',
@@ -58,7 +75,6 @@ describe('[Integration] DELETE /api/files/internal/by-workspace/:id', () => {
   const app = createApp();
 
   test('✅ Xóa documents theo workspaceId — DB được cập nhật deletedAt', async () => {
-    // 🟢 Dùng ObjectId thật chuẩn của Mongoose
     const wsId = new mongoose.Types.ObjectId().toString();
     const otherWsId = new mongoose.Types.ObjectId().toString();
 
@@ -67,8 +83,7 @@ describe('[Integration] DELETE /api/files/internal/by-workspace/:id', () => {
     const doc2 = await seedDocument({ workspaceId: wsId });
     const docOther = await seedDocument({ workspaceId: otherWsId });
 
-    const res = await request(app)
-      .delete(`/api/files/internal/by-workspace/${wsId}`);
+    const res = await request(app).delete(`/api/files/internal/by-workspace/${wsId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.message).toBe('Deleted documents by workspace');
@@ -87,10 +102,8 @@ describe('[Integration] DELETE /api/files/internal/by-workspace/:id', () => {
   test('❌ Lỗi Database (Crash) → 500', async () => {
     jest.spyOn(Document, 'updateMany').mockRejectedValueOnce(new Error('DB Query Timeout'));
 
-    // 🟢 Chỗ này cũng truyền 1 ID chuẩn
     const fakeId = new mongoose.Types.ObjectId().toString();
-    const res = await request(app)
-      .delete(`/api/files/internal/by-workspace/${fakeId}`);
+    const res = await request(app).delete(`/api/files/internal/by-workspace/${fakeId}`);
 
     expect(res.status).toBe(500);
     expect(res.body.message).toBe('DB Query Timeout');
@@ -104,7 +117,6 @@ describe('[Integration] DELETE /api/files/internal/by-folders', () => {
   const app = createApp();
 
   test('✅ Xóa documents theo folderIds — DB được cập nhật deletedAt', async () => {
-    // 🟢 Dùng ObjectId thật chuẩn của Mongoose
     const folder1 = new mongoose.Types.ObjectId().toString();
     const folder2 = new mongoose.Types.ObjectId().toString();
     const folder3 = new mongoose.Types.ObjectId().toString();
@@ -127,8 +139,6 @@ describe('[Integration] DELETE /api/files/internal/by-folders', () => {
 
     expect(checkDoc1.deletedAt).not.toBeNull();
     expect(checkDoc2.deletedAt).not.toBeNull();
-    
-    // Kiểm tra doc3 thuộc folder khác thì vẫn an toàn (deletedAt là null)
     expect(activeDoc.deletedAt).toBeNull();
   });
 
@@ -170,7 +180,6 @@ describe('[Integration] PUT /api/files/internal/by-folders/restore', () => {
   const app = createApp();
 
   test('✅ Restore documents theo folderIds — DB xóa field deletedAt', async () => {
-    // 🟢 Dùng ObjectId thật chuẩn của Mongoose
     const folder1 = new mongoose.Types.ObjectId().toString();
     const folderOther = new mongoose.Types.ObjectId().toString();
     
@@ -223,17 +232,6 @@ describe('[Integration] PUT /api/files/internal/by-folders/restore', () => {
 // ═══════════════════════════════════════════════════════════
 describe('[Integration] DELETE /api/files/internal/by-folders/force', () => {
   const app = createApp();
-
-  // Helper để tạo Physical File nhanh trong test này nếu file setup chưa có
-  async function seedPhysical(overrides = {}) {
-    return PhysicalFile.create({
-      hashString: `hash-${Date.now()}-${Math.random()}`,
-      minioObjectPath: `test-path-${Date.now()}.pdf`,
-      sizeBytes: 1024,
-      mimeType: 'application/pdf',
-      ...overrides
-    });
-  }
 
   test('✅ Xóa vĩnh viễn file (usageCount = 0) → DB & Storage đều được gọi', async () => {
     const pf = await seedPhysical();
@@ -320,6 +318,137 @@ describe('[Integration] DELETE /api/files/internal/by-folders/force', () => {
       .delete('/api/files/internal/by-folders/force')
       .send({ folderIds: [folderId] });
 
+    expect(res.status).toBe(500);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// BỔ SUNG: GET /api/files/internal/by-folders/getFiles
+// ═══════════════════════════════════════════════════════════
+describe('[Integration] GET /api/files/internal/by-folders/getFiles', () => {
+  const app = createApp();
+
+  test('✅ Lấy danh sách file thư mục gốc (folderId = "null")', async () => {
+    const pf = await seedPhysical();
+    await seedDocument({ folderId: null, deletedAt: null, physicalFileId: pf._id });
+    await seedDocument({ folderId: new mongoose.Types.ObjectId(), deletedAt: null }); // Thuộc folder khác
+
+    const res = await request(app).get('/api/files/internal/by-folders/getFiles').query({ folderId: 'null', deletedAt: 'null' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].physicalFileId.sizeBytes).toBe(1024); // KĐ Populate thành công
+  });
+
+  test('❌ DB lỗi (Crash) → 500', async () => {
+    jest.spyOn(Document, 'find').mockImplementationOnce(() => { throw new Error('Crash'); });
+    const res = await request(app).get('/api/files/internal/by-folders/getFiles');
+    expect(res.status).toBe(500);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// BỔ SUNG: GET /api/files/internal/by-searching
+// ═══════════════════════════════════════════════════════════
+describe('[Integration] GET /api/files/internal/by-searching', () => {
+  const app = createApp();
+
+  test('✅ Lấy files qua mảng IDs → 200', async () => {
+    const pf = await seedPhysical();
+    const doc1 = await seedDocument({ physicalFileId: pf._id });
+    const doc2 = await seedDocument({ physicalFileId: pf._id });
+
+    const res = await request(app).get('/api/files/internal/by-searching').query({ ids: `${doc1._id},${doc2._id}` });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(2);
+    expect(res.body.data[0].physicalFileId.minioObjectPath).toBeDefined();
+  });
+
+  test('❌ Không truyền ids → 400', async () => {
+    const res = await request(app).get('/api/files/internal/by-searching');
+    expect(res.status).toBe(400);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// BỔ SUNG: GET /api/files/internal/by-admin
+// ═══════════════════════════════════════════════════════════
+describe('[Integration] GET /api/files/internal/by-admin', () => {
+  const app = createApp();
+
+  test('✅ Lấy files kèm phân trang, tìm kiếm theo tên và workspace → 200', async () => {
+    const wsId = new mongoose.Types.ObjectId().toString();
+    await seedDocument({ originalName: 'BaoCao.pdf', workspaceId: wsId });
+    await seedDocument({ originalName: 'BaoCao_T2.pdf', workspaceId: wsId });
+    await seedDocument({ originalName: 'Khac.pdf' });
+
+    const res = await request(app).get('/api/files/internal/by-admin').query({ page: 1, limit: 10, search: 'baocao', workspaceId: wsId });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.files).toHaveLength(2); // Chỉ ra 2 file BaoCao
+    expect(res.body.data.pagination.total).toBe(2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// BỔ SUNG: GET /api/files/internal/by-admin/:id
+// ═══════════════════════════════════════════════════════════
+describe('[Integration] GET /api/files/internal/by-admin/:id', () => {
+  const app = createApp();
+
+  test('✅ Tìm thấy file → 200', async () => {
+    const doc = await seedDocument();
+    const res = await request(app).get(`/api/files/internal/by-admin/${doc._id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data._id).toBe(doc._id.toString());
+  });
+
+  test('❌ Không tìm thấy → 404', async () => {
+    const fakeId = new mongoose.Types.ObjectId().toString();
+    const res = await request(app).get(`/api/files/internal/by-admin/${fakeId}`);
+    expect(res.status).toBe(404);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// BỔ SUNG: GET /api/files/internal/stats
+// ═══════════════════════════════════════════════════════════
+describe('[Integration] GET /api/files/internal/stats', () => {
+  const app = createApp();
+
+  test('✅ Tính toán Aggregation chính xác % tiết kiệm → 200', async () => {
+    // Kịch bản: 1 PhysicalFile dung lượng 10MB, nhưng được sử dụng bởi 3 Documents
+    const pf = await seedPhysical({ sizeBytes: 10 * 1024 * 1024 }); 
+    
+    await seedDocument({ physicalFileId: pf._id });
+    await seedDocument({ physicalFileId: pf._id });
+    await seedDocument({ physicalFileId: pf._id });
+
+    const res = await request(app).get('/api/files/internal/stats');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.totalDocuments).toBe(3);
+    expect(res.body.data.totalPhysicalFiles).toBe(1);
+    
+    expect(res.body.data.totalSizeBytes).toBe(10485760);  // 10MB
+    expect(res.body.data.savedSizeBytes).toBe(20971520);  // 20MB
+    
+    // (20MB / 30MB) * 100 = 66.67%
+    expect(res.body.data.savedPercentage).toBeCloseTo(66.67, 1); 
+  });
+
+  test('✅ Database trống hoàn toàn (An toàn phép chia 0) → 200', async () => {
+    const res = await request(app).get('/api/files/internal/stats');
+    
+    expect(res.status).toBe(200);
+    expect(res.body.data.savedPercentage).toBe(0);
+    expect(res.body.data.totalSizeBytes).toBe(0);
+  });
+
+  test('❌ Database lỗi (Crash) → 500', async () => {
+    jest.spyOn(Document, 'aggregate').mockRejectedValueOnce(new Error('Agg Crash'));
+    const res = await request(app).get('/api/files/internal/stats');
     expect(res.status).toBe(500);
   });
 });

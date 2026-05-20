@@ -157,6 +157,143 @@ async function forceDeleteFilesByFolders(req, res) {
   }
 }
 
+//-------GET /api/files/internal/by-admin-----------
+async function getFilesAdmin(req, res) {
+    try {
+        const { 
+            page = 1, 
+            limit = 20, 
+            search = '',
+            workspaceId = ''
+        } = req.query;
+        
+        const query = {};
+        if (search) {
+            query.originalName = { $regex: search, $options: 'i' };
+        }
+        if (workspaceId) {
+            query.workspaceId = workspaceId;
+        }
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const total = await Document.countDocuments(query);
+
+        const files = await Document.find(query)
+            .populate('physicalFileId') 
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        return res.json({
+            data: {
+                files,
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total,
+                    totalPages: Math.ceil(total / limit),
+                }
+            }
+        });
+    } catch (err) {
+        console.error('[File Service] getFilesAdmin error:', err);
+        return res.status(500).json({ message: err.message });
+    }
+}
+
+//-------GET /api/files/internal/by-admin/:id-----------
+async function getFileByIdAdmin(req, res) {
+    try {
+        const fileId = req.params.id;
+        const file = await Document.findById(fileId).populate('physicalFileId'); 
+            
+        if (!file) {
+            return res.status(404).json({ message: "File not found" });
+        }
+        return res.json({ data: file });
+    } catch (err) {
+        console.error('[File Service] getFileByIdAdmin error:', err);
+        return res.status(500).json({ message: err.message });
+    }
+}
+
+//-----------GET /api/files/internal/stats-----------
+async function getStats(req, res) {
+  try {
+    const [
+      totalDocuments, 
+      totalPhysicalFiles, 
+      physicalAgg, 
+      docAgg
+    ] = await Promise.all([
+      
+      Document.countDocuments({}),
+      PhysicalFile.countDocuments({}),
+      
+      PhysicalFile.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalSizeBytes: { $sum: '$sizeBytes' },
+          },
+        },
+      ]),
+
+      Document.aggregate([
+        {
+          // Bước 1: Gom nhóm Document theo physicalFileId để đếm tần suất sử dụng
+          $group: {
+            _id: '$physicalFileId',
+            useCount: { $sum: 1 }
+          }
+        },
+        {
+          // Bước 2: Lúc này số lượng bản ghi truyền xuống chỉ còn bằng số lượng PhysicalFile
+          // Phép $lookup nhẹ đi hàng chục, hàng trăm lần!
+          $lookup: {
+            from: 'physicalfiles', // LƯU Ý: Đảm bảo tên collection trong MongoDB của bạn đúng là 'physicalfiles' (thường thêm chữ 's')
+            localField: '_id',
+            foreignField: '_id',
+            as: 'physicalFile',
+          },
+        },
+        { $unwind: '$physicalFile' },
+        {
+          // Bước 3: Nhân dung lượng file với số lần được nhân bản
+          $group: {
+            _id: null,
+            totalSizeBytesNoDedup: { 
+              $sum: { $multiply: ['$physicalFile.sizeBytes', '$useCount'] } 
+            },
+          },
+        },
+      ])
+    ]);
+
+    const totalSizeBytes        = physicalAgg[0]?.totalSizeBytes || 0;
+    const totalSizeBytesNoDedup = docAgg[0]?.totalSizeBytesNoDedup || 0;
+
+    // Dung lượng tiết kiệm = tổng nếu không dedup - tổng thực tế
+    const savedSizeBytes  = Math.max(0, totalSizeBytesNoDedup - totalSizeBytes);
+    const savedPercentage = totalSizeBytesNoDedup > 0
+      ? parseFloat(((savedSizeBytes / totalSizeBytesNoDedup) * 100).toFixed(2))
+      : 0;
+
+    return res.json({
+      data: {
+        totalDocuments,
+        totalPhysicalFiles,
+        totalSizeBytes,
+        savedSizeBytes,
+        savedPercentage,
+      },
+    });
+  } catch (err) {
+    console.error("[Stats Error]", err);
+    return res.status(500).json({ message: err.message });
+  }
+}
+
 module.exports = {
     deletedByWorkspace, 
     deletedByFolders, 
@@ -164,4 +301,7 @@ module.exports = {
     getListFiles, 
     getFileIds,
     forceDeleteFilesByFolders,
+    getFileByIdAdmin,
+    getFilesAdmin,
+    getStats
 };

@@ -1,7 +1,6 @@
 const mongoose = require('mongoose');
-const { Schema } = mongoose;
 
-const documentSchema = new Schema({
+const documentSchema = new mongoose.Schema({
     originalName:{
         type: String,
         required: true,
@@ -23,11 +22,6 @@ const documentSchema = new Schema({
     uploadedBy:{
         type: mongoose.Schema.Types.ObjectId,
         required: true,
-    },
-    processedStatus:{
-        type:String,
-        enum: ["PENDING", "PROCESSING", "DONE", "FAILED"],
-        default: "PENDING",
     },
     isDuplicate:{
         type: Boolean,
