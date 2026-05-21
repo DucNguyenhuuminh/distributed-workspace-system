@@ -27,6 +27,7 @@ const EVENTS = {
     MEMBER_PERMISSION: 'member.permission',
 
     USER_REGISTERED: 'user.registered',
+    PASSWORD_RESET: 'user.reset-password',
     NOTIFY_USER: 'notification.send'
 };
 
@@ -50,6 +51,7 @@ const EVENT_QUEUE_MAP = {
     [EVENTS.MEMBER_PERMISSION]: QUEUES.WORKSPACE,
 
     [EVENTS.USER_REGISTERED]: QUEUES.GENERAL,
+    [EVENTS.PASSWORD_RESET]: QUEUES.GENERAL,
     [EVENTS.NOTIFY_USER]: QUEUES.NOTIFICATION,
 };
 

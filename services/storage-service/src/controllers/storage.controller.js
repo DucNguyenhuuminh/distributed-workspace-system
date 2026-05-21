@@ -6,6 +6,7 @@ async function initMultipartUpload(req,res) {
         const {filename, mimeType, totalChunks} = req.body;
 
         if(!totalChunks || totalChunks <= 0) {
+            console.warn(`[StorageController] Init failed: Lack of chunks for '${filename}'`);
             return res.status(400).json({message: "Lack of chunks"});
         }
 
@@ -32,7 +33,8 @@ async function initMultipartUpload(req,res) {
                 );
             })
         );
-    
+        
+        console.log(`[StorageController] Successfully generated ${totalChunks} presigned URLs. UploadId: ${uploadId}`);
         return res.status(201).json({message: "Init multipart upload successfully",
             data: {uploadId, objectName, presignedURLs}});
     } catch(err) {
@@ -60,6 +62,7 @@ async function completeMultipartUpload(req,res) {
             sortedEtags
         );
 
+        console.log(`[StorageController] Successfully merged chunks for object: ${objectName}`);
         return res.json({message: "Merge chunks successfully", data: {objectName}});
     } catch(err) {
         console.error("[storage-service] completeMultipartUpload error:", err.response?.data || err.message);
@@ -76,6 +79,7 @@ async function getDownloadURL(req,res) {
         const {objectName, originalName, action} = req.query;
 
         if (!objectName) {
+            console.warn(`[StorageController] Get URL failed: Object name is missing`);
             return res.status(400).json({message: "Object name is required"});
         }
 
@@ -92,6 +96,7 @@ async function getDownloadURL(req,res) {
             7*3600,
             resHeaders
         );
+        console.log(`[StorageController] Successfully generated presigned URL for: ${objectName}`);
         return res.json({message: "Get download URL successfully", data: {url}});
     } catch(err) {
         console.error("[storage-service] getDownloadURL error:", err.response?.data || err.message);
@@ -108,8 +113,10 @@ async function deleteDupFile(req,res) {
         const {objectName} = req.body;
 
         await minioClient.removeObject(bucketName, objectName);
+        console.log(`[StorageController] Successfully deleted physical object: ${objectName}`);
         return res.json({message: "Delete file successfully"});
     } catch(err) {
+        console.error("[StorageController] System error in deleteDupFile:", err.message);
         return res.status(500).json({message: err.message});
     }
 }

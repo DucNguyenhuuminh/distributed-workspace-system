@@ -45,12 +45,14 @@ async function isCircularMove(sourceFolderId, targetParentId) {
 
     while(currentParentId) {
         if (currentParentId.toString() === sourceFolderId.toString()) {
+            console.warn(`[FolderController] Circular move detected for source ${sourceFolderId} into target ${targetParentId}`);
             return true;
         }
         const parentNode = await Folder.findById(currentParentId,'parentId');
         currentParentId = parentNode ? parentNode.parentId : null;
         depth++;
         if (depth > 100) {
+            console.error(`[FolderController] System Error: Tree depth exceeded 100 during circular move check`);
             throw new Error("System Error: Tree depth exceeded");
         }
     }
@@ -68,16 +70,22 @@ async function createFolder(req,res) {
         //check exists & permission
         if (workspaceId) {
             const workspace = await Workspace.findById(workspaceId);
-            if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
-
+            if (!workspace){
+                console.warn(`[FolderController] Create folder failed: Workspace ${workspaceId} not found`);
+                return res.status(404).json({ message: 'Workspace not found' });
+            }
             const member = workspace.members.find((m) => m.userId.toString() === userId);
-            if (!member) return res.status(403).json({ message: 'You are not a member of this workspace' });
-
+            if (!member) {
+                console.warn(`[FolderController] Create folder failed: User ${userId} not in workspace ${workspaceId}`);
+                return res.status(403).json({ message: 'You are not a member of this workspace' });
+            }
             const canEdit = member.role === 'ADMIN' || member.permissions.includes('editor');
-            if (!canEdit) return res.status(403).json({ message: 'No permission to modify in this workspace' });
+            if (!canEdit) {
+                console.warn(`[FolderController] Create folder failed: User ${userId} lacks 'editor' permission in workspace ${workspaceId}`);
+                return res.status(403).json({ message: 'No permission to modify in this workspace' });
+            }
         }
         
-
         const folder = await Folder.create({
             name,
             workspaceId: workspaceId || null,
@@ -85,27 +93,31 @@ async function createFolder(req,res) {
             createdBy: userId,
         });
 
+        console.log(`[FolderController] Successfully created folder. ID: ${folder._id}`);
         return res.status(201).json({message: "Created folder successful", data: folder});
     } catch (err) {
+        console.error(`[FolderController] System error in createFolder:`, err.message);
         return res.status(500).json({message: err.message});
     }
 }
 
 //-------GET /api/folders-----------
-async function getFolders(req,res) {
+async function getFolders(req, res) {
     try {
         const userId = req.user.userId;
-        const {workspaceId, parentId} = req.query;
+        const { workspaceId, parentId } = req.query;
 
         //check exists & permission
         if (workspaceId) {
             const workspace = await Workspace.findById(workspaceId);
             if (!workspace) {
-                return res.status(404).json({message: "Workspace not found"});
+                console.warn(`[FolderController] Get folders failed: Workspace ${workspaceId} not found`);
+                return res.status(404).json({ message: "Workspace not found" });
             }
             const member = workspace.members.some((m) => m.userId.toString() === userId);
             if (!member) {
-                return res.status(403).json({message: "You do not have permission to access this workspace"});
+                console.warn(`[FolderController] Get folders failed: User ${userId} not in workspace ${workspaceId}`);
+                return res.status(403).json({ message: "You do not have permission to access this workspace" });
             }
         }
 
@@ -114,54 +126,62 @@ async function getFolders(req,res) {
             query.parentId = parentId;
             if (workspaceId) {
                 query.workspaceId = workspaceId;
-            }else {
-                query.createdBy     = userId;
+            } else {
+                query.createdBy = userId;
                 query.workspaceId = null;
             }
-        }else {
+        } else {
             if (workspaceId) {
                 query.workspaceId = workspaceId;
-                query.parentId    = null;
+                query.parentId = null;
             } else {
-                query.createdBy     = userId;
+                query.createdBy = userId;
                 query.workspaceId = null;
-                query.parentId    = null;
+                query.parentId = null;
             }
         }
 
         const folders = await Folder.find(query);
-        return res.json({data: folders});
-    } catch(err) {
-        return res.status(500).json({message: err.message});
+        console.log(`[FolderController] Successfully fetched ${folders.length} folders`);
+        return res.json({ data: folders });
+    } catch (err) {
+        console.error(`[FolderController] System error in getFolders:`, err.message);
+        return res.status(500).json({ message: err.message });
     }
 }
 
 //-------GET /api/folders/:id-----------
-async function getFolderById(req,res) {
+async function getFolderById(req, res) {
     try {
         const folderId = req.params.id;
         const userId = req.user.userId;
 
-        // 1. Kiểm tra folder có tồn tại không
         const currentFolder = await Folder.findById(folderId);
         if (!currentFolder) {
-            return res.status(404).json({message: "Folder not exist"});
+            console.warn(`[FolderController] Folder not found. ID: ${folderId}`);
+            return res.status(404).json({ message: "Folder not exist" });
         }
 
-        // 2. Kiểm tra quyền truy cập (giống hệt logic cũ)
+        // Check access permissions
         if (currentFolder.workspaceId) {
             const workspace = await Workspace.findById(currentFolder.workspaceId);
-            if (!workspace) return res.status(404).json({message: "Workspace not exist"});
+            if (!workspace) {
+                console.warn(`[FolderController] Workspace ${currentFolder.workspaceId} associated with folder not found`);
+                return res.status(404).json({ message: "Workspace not exist" });
+            }
             
             const member = workspace.members.some((m) => m.userId.toString() === userId);
-            if (!member) return res.status(403).json({message: "You do not have permission to access this folder"});
+            if (!member) {
+                console.warn(`[FolderController] Permission denied for user ${userId} accessing workspace folder ${folderId}`);
+                return res.status(403).json({ message: "You do not have permission to access this folder" });
+            }
         } else {
             if (currentFolder.createdBy.toString() !== userId) {
-                return res.status(403).json({message: "You do not have permission to access this folder"});
+                console.warn(`[FolderController] Permission denied for user ${userId} accessing personal folder ${folderId}`);
+                return res.status(403).json({ message: "You do not have permission to access this folder" });
             }
         }
 
-        // 3. Query lấy danh sách thư mục con (sub-folders)
         const folders = await Folder.find({
             parentId: folderId,
             deletedAt: null
@@ -169,22 +189,20 @@ async function getFolderById(req,res) {
 
         let files = [];
         try {
+            console.log(`[FolderController] Requesting File Service to get files for folder: ${folderId}`);
             const response = await axios.get(`${FILE_SERVICE_URL}/api/files/internal/by-folders/getFiles`, {
-                params: { 
-                    folderId: folderId, 
-                    deletedAt: null 
-                },
+                params: { folderId: folderId, deletedAt: null },
                 headers: { Authorization: req.headers.authorization },
             });
             files = response.data?.data || [];
-        } catch(err){
-            console.error("[workspace-service] Error while call File Service get files:", err.message);
-            return res.status(500).json({message: "Error system when get all the files"});
+        } catch (err) {
+            console.error(`[FolderController] Failed to fetch files from File Service for folder ${folderId}:`, err.message);
+            return res.status(500).json({ message: "Error system when get all the files" });
         }
             
         const breadcrumb = await getBreadcrumbPath(folderId);
 
-        // Trả về tất cả trong 1 response
+        console.log(`[FolderController] Successfully fetched folder details for ID: ${folderId}`);
         return res.json({
             data: {
                 folderInfo: currentFolder,
@@ -193,205 +211,238 @@ async function getFolderById(req,res) {
                 breadcrumb: breadcrumb
             }
         });
-    } catch(err) {
-        return res.status(500).json({message: err.message});
+    } catch (err) {
+        console.error(`[FolderController] System error in getFolderById:`, err.message);
+        return res.status(500).json({ message: err.message });
     }
-}
+} 
 
 //-------PUT /api/folders/:id/rename-----------
-async function renameFolder(req,res) {
+async function renameFolder(req, res) {
     try {
         const folderId = req.params.id;
         const userId = req.user.userId;
-        const {name} = req.body;
+        const { name } = req.body;
 
         //check exists & permission
         const folder = await Folder.findById(folderId);
         if (!folder) {
-            return res.status(404).json({message: "Folder not exist"});
+            console.warn(`[FolderController] Rename failed: Folder not found. ID: ${folderId}`);
+            return res.status(404).json({ message: "Folder not exist" });
         }
         if (!folder.workspaceId) {
             if (folder.createdBy.toString() !== userId) {
-                return res.status(403).json({message: "No permission to modify this folder"});
+                console.warn(`[FolderController] Rename failed: Personal folder ${folderId} does not belong to user ${userId}`);
+                return res.status(403).json({ message: "No permission to modify this folder" });
             }
-        }else {
+        } else {
             const workspace = await Workspace.findById(folder.workspaceId);
             if (!workspace) {
+                console.warn(`[FolderController] Rename failed: Workspace ${folder.workspaceId} not found`);
                 return res.status(404).json({ message: "Workspace not found" });
             }
             const targetMember = workspace.members.find((m) => m.userId.toString() === userId);
             if (!targetMember) {
-                return res.status(403).json({message: "You are not a member of this workspace"});
+                console.warn(`[FolderController] Rename failed: User ${userId} not a member of workspace`);
+                return res.status(403).json({ message: "You are not a member of this workspace" });
             }
 
             const canEdit = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
             if (!canEdit) {
-                return res.status(403).json({message: "No permission to modify folder in this workspace"});
+                console.warn(`[FolderController] Rename failed: User ${userId} lacks 'editor' permission`);
+                return res.status(403).json({ message: "No permission to modify folder in this workspace" });
             }
         }
 
         folder.name = name;
         await folder.save();
         
-        return res.json({message: "Rename successfully", data: folder});
-    } catch(err) {
-        return res.status(500).json({message: err.message});
+        console.log(`[FolderController] Successfully renamed folder ${folderId}`);
+        return res.json({ message: "Rename successfully", data: folder });
+    } catch (err) {
+        console.error(`[FolderController] System error in renameFolder:`, err.message);
+        return res.status(500).json({ message: err.message });
     }
 }
 
 //-------DELETE /api/folders/:id-----------
-async function deleteFolder(req,res) {
+async function deleteFolder(req, res) {
     try {
         const userId = req.user.userId;
-        const folderId = req.params.id;
+        const folderId = req.params.id;        
         const childFolderIds = await getAllDescendantIds(folderId);
         const allFolderIds = [folderId, ...childFolderIds];
 
         //check exists & permission
         const folder = await Folder.findById(folderId);
         if (!folder) {
-            return res.status(404).json({message: "Folder not exist"});
+            console.warn(`[FolderController] Delete failed: Folder not found. ID: ${folderId}`);
+            return res.status(404).json({ message: "Folder not exist" });
         }
         if (!folder.workspaceId) {
             if (folder.createdBy.toString() !== userId) {
-                return res.status(403).json({message: "No permission to modify this folder"});
+                console.warn(`[FolderController] Delete failed: Personal folder ${folderId} does not belong to user ${userId}`);
+                return res.status(403).json({ message: "No permission to modify this folder" });
             }
-        }else {
+        } else {
             const workspace = await Workspace.findById(folder.workspaceId);
             if (!workspace) {
+                console.warn(`[FolderController] Delete failed: Workspace ${folder.workspaceId} not found`);
                 return res.status(404).json({ message: "Workspace not found" });
             }
             const targetMember = workspace.members.find((m) => m.userId.toString() === userId);
             if (!targetMember) {
-                return res.status(403).json({message: "You are not a member of this workspace"});
+                console.warn(`[FolderController] Delete failed: User ${userId} not a member of workspace`);
+                return res.status(403).json({ message: "You are not a member of this workspace" });
             }
 
             const canEdit = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
             if (!canEdit) {
-                return res.status(403).json({message: "No permission to modify folder in this workspace"});
+                console.warn(`[FolderController] Delete failed: User ${userId} lacks 'editor' permission`);
+                return res.status(403).json({ message: "No permission to modify folder in this workspace" });
             }
         }
+
         try {
+            console.log(`[FolderController] Calling File Service to soft delete internal files for folder hierarchy: ${folderId}`);
             await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders`, {
                 data: { folderIds: allFolderIds },
                 headers: { Authorization: req.headers.authorization }
             });
-        } catch(err) {
-            console.error("[workspace-service] Error while call File Service delete file:", err.message);
-            return res.status(500).json({message: "Error system when delete all the files"});
+        } catch (err) {
+            console.error(`[FolderController] Failed to soft delete files via File Service for folder ${folderId}:`, err.message);
+            return res.status(500).json({ message: "Error system when delete all the files" });
         }
         
         await Folder.updateMany(
-            {_id: {$in: allFolderIds}},
-            {deletedAt: new Date()}
+            { _id: { $in: allFolderIds } },
+            { deletedAt: new Date() }
         );
 
-        return res.json({message: "Folder deleted successfully"});
-    } catch(err) {
-        return res.status(500).json({message: err.message});
+        console.log(`[FolderController] Successfully soft-deleted folder hierarchy starting at ${folderId}`);
+        return res.json({ message: "Folder deleted successfully" });
+    } catch (err) {
+        console.error(`[FolderController] System error in deleteFolder:`, err.message);
+        return res.status(500).json({ message: err.message });
     }
 }
 
 //-------PUT /api/folders/:id/restore-----------
-async function restoreFolder(req,res) {
+async function restoreFolder(req, res) {
     try {
         const folderId = req.params.id;
         const userId = req.user.userId;
 
         //check exists & permission
-        const folder = await Folder.findById(folderId).setOptions({includeDeleted: true});
+        const folder = await Folder.findById(folderId).setOptions({ includeDeleted: true });
         if (!folder) {
-            return res.status(404).json({message: "Folder not exist"});
+            console.warn(`[FolderController] Restore failed: Folder not found. ID: ${folderId}`);
+            return res.status(404).json({ message: "Folder not exist" });
         }
         if (!folder.workspaceId) {
             if (folder.createdBy.toString() !== userId) {
-                return res.status(403).json({message: "No permission to modify this folder"});
+                console.warn(`[FolderController] Restore failed: Personal folder ${folderId} does not belong to user ${userId}`);
+                return res.status(403).json({ message: "No permission to modify this folder" });
             }
-        }else {
+        } else {
             const workspace = await Workspace.findById(folder.workspaceId);
             if (!workspace) {
+                console.warn(`[FolderController] Restore failed: Workspace ${folder.workspaceId} not found`);
                 return res.status(404).json({ message: "Workspace not found" });
             }
             const targetMember = workspace.members.find((m) => m.userId.toString() === userId);
             if (!targetMember) {
-                return res.status(403).json({message: "You are not a member of this workspace"});
+                console.warn(`[FolderController] Restore failed: User ${userId} not a member of workspace`);
+                return res.status(403).json({ message: "You are not a member of this workspace" });
             }
 
             const canEdit = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
             if (!canEdit) {
-                return res.status(403).json({message: "No permission to modify folder in this workspace"});
+                console.warn(`[FolderController] Restore failed: User ${userId} lacks 'editor' permission`);
+                return res.status(403).json({ message: "No permission to modify folder in this workspace" });
             }
         }
 
         //check deleted time
         if (!folder.deletedAt) {
-            return res.status(400).json({message: "Folder not in the trash"});
+            console.warn(`[FolderController] Restore failed: Folder ${folderId} is not in trash`);
+            return res.status(400).json({ message: "Folder not in the trash" });
         }
 
         // delete logic
         const now = new Date();
         const deletedTime = new Date(folder.deletedAt);
         const diffInMilliseconds = now.getTime() - deletedTime.getTime();
-        const diffInDays = diffInMilliseconds/(1000*60*60*24);
+        const diffInDays = diffInMilliseconds / (1000 * 60 * 60 * 24);
 
         if (diffInDays > 10) {
-            return res.status(400).json({message: "Can not restore. File already in trash over 10 days"})
+            console.warn(`[FolderController] Restore failed: Folder ${folderId} has been in trash over 10 days`);
+            return res.status(400).json({ message: "Can not restore. File already in trash over 10 days" });
         }
 
         const childFolderIds = await getAllDescendantIds(folder._id);
         const allFoldersIds = [folder._id.toString(), ...childFolderIds];
 
         try {
+            console.log(`[FolderController] Calling File Service to restore internal files for folder hierarchy: ${folderId}`);
             await axios.put(`${FILE_SERVICE_URL}/api/files/internal/by-folders/restore`,
-                {folderIds: allFoldersIds},
-                {headers: {Authorization: req.headers.authorization}}
+                { folderIds: allFoldersIds },
+                { headers: { Authorization: req.headers.authorization } }
             );
-        } catch(err) {
-            console.error("[workspace-service] Error while call File Service restore file:", err.message);
-            return res.status(500).json({message: "Error system when restore all sub-folders"});
+        } catch (err) {
+            console.error(`[FolderController] Failed to restore files via File Service for folder ${folderId}:`, err.message);
+            return res.status(500).json({ message: "Error system when restore all sub-folders" });
         }
 
         await Folder.updateMany(
-            {_id: {$in: allFoldersIds}},
-            {deletedAt: null}
+            { _id: { $in: allFoldersIds } },
+            { deletedAt: null }
         );
 
-        return res.json({message: "Restore folder successfully", data: folder});
-    } catch(err) {
-        return res.status(500).json({message: err.message});
+        console.log(`[FolderController] Successfully restored folder hierarchy starting at ${folderId}`);
+        return res.json({ message: "Restore folder successfully", data: folder });
+    } catch (err) {
+        console.error(`[FolderController] System error in restoreFolder:`, err.message);
+        return res.status(500).json({ message: err.message });
     }
 }
 
 //-------PUT /api/folders/:id/move-----------
-async function moveFolder(req,res) {
+async function moveFolder(req, res) {
     try {
         const userId = req.user.userId;
         const folderId = req.params.id;
-        const {newParentId, targetWorkspaceId} = req.body;
+        const { newParentId, targetWorkspaceId } = req.body;
 
         //check exists & permission
         const sourceFolder = await Folder.findById(folderId);
         if (!sourceFolder) {
-            return res.status(404).json({message: "Folder not exist"});
+            console.warn(`[FolderController] Move failed: Source folder not found. ID: ${folderId}`);
+            return res.status(404).json({ message: "Folder not exist" });
         }
         if (!sourceFolder.workspaceId) {
             if (sourceFolder.createdBy.toString() !== userId) {
-                return res.status(403).json({message: "No permission to modify this folder"});
+                console.warn(`[FolderController] Move failed: Personal folder ${folderId} does not belong to user ${userId}`);
+                return res.status(403).json({ message: "No permission to modify this folder" });
             }
-        }else {
+        } else {
             const workspace = await Workspace.findById(sourceFolder.workspaceId);
             const targetMember = workspace.members.find((m) => m.userId.toString() === userId);
             if (!targetMember) {
-                return res.status(403).json({message: "You are not a member of this workspace"});
+                console.warn(`[FolderController] Move failed: User ${userId} not a member of source workspace`);
+                return res.status(403).json({ message: "You are not a member of this workspace" });
             }
 
             const canEdit = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
             if (!canEdit) {
-                return res.status(403).json({message: "No permission to modify folder in this workspace"});
+                console.warn(`[FolderController] Move failed: User ${userId} lacks 'editor' permission in source workspace`);
+                return res.status(403).json({ message: "No permission to modify folder in this workspace" });
             }
         }
+        
         if (newParentId && sourceFolder._id.toString() === newParentId) {
-            return res.status(400).json({message: "Cannot move folder into itself"});
+            console.warn(`[FolderController] Move failed: Cannot move folder ${folderId} into itself`);
+            return res.status(400).json({ message: "Cannot move folder into itself" });
         }
 
         let finalWorkspaceId = null;
@@ -400,46 +451,54 @@ async function moveFolder(req,res) {
         if (newParentId) {
             const targetFolder = await Folder.findById(newParentId);
             if (!targetFolder) {
-                return res.status(404).json({message: "Target parent folder not found"});
+                console.warn(`[FolderController] Move failed: Target parent folder not found. ID: ${newParentId}`);
+                return res.status(404).json({ message: "Target parent folder not found" });
             }
 
             finalWorkspaceId = targetFolder.workspaceId;
 
             if (!targetFolder.workspaceId) {
                 if (targetFolder.createdBy.toString() !== userId) {
-                    return res.status(403).json({message: "No permission to move to the target folder"});
+                    console.warn(`[FolderController] Move failed: No permission to move into target personal folder ${newParentId}`);
+                    return res.status(403).json({ message: "No permission to move to the target folder" });
                 }
-            }else {
+            } else {
                 const Ws = await Workspace.findById(targetFolder.workspaceId);
                 if (!Ws) {
-                    return res.status(404).json({message: "Target workspace not found"});
+                    console.warn(`[FolderController] Move failed: Target workspace ${targetFolder.workspaceId} not found`);
+                    return res.status(404).json({ message: "Target workspace not found" });
                 }
                 const targetMember = Ws.members.find((m) => m.userId.toString() === userId);
                 if (!targetMember) {
-                    return res.status(403).json({message: "No permission to move to the target workspace"});
+                    console.warn(`[FolderController] Move failed: User ${userId} not a member of target workspace`);
+                    return res.status(403).json({ message: "No permission to move to the target workspace" });
                 }
                 const canUpload = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
                 if (!canUpload) { 
-                    return res.status(403).json({message: "No permission to move to the target workspace"});
+                    console.warn(`[FolderController] Move failed: User ${userId} lacks 'editor' permission in target workspace`);
+                    return res.status(403).json({ message: "No permission to move to the target workspace" });
                 }
             }
-        }else {
+        } else {
             if (targetWorkspaceId) {
                 const Ws = await Workspace.findById(targetWorkspaceId);
                 if (!Ws) {
-                    return res.status(404).json({message: "Target workspace not found"});
+                    console.warn(`[FolderController] Move failed: Target workspace ${targetWorkspaceId} not found`);
+                    return res.status(404).json({ message: "Target workspace not found" });
                 }
                 const targetMember = Ws.members.find((m) => m.userId.toString() === userId);
                 if (!targetMember) {
-                    return res.status(403).json({message: "You are not a member of the target workspace"});
+                    console.warn(`[FolderController] Move failed: User ${userId} not a member of target workspace ${targetWorkspaceId}`);
+                    return res.status(403).json({ message: "You are not a member of the target workspace" });
                 }
                 const canUpload = targetMember.role === "ADMIN" || targetMember.permissions.includes("editor");
                 if (!canUpload) {
-                    return res.status(403).json({message: "No 'editor' permission"});
+                    console.warn(`[FolderController] Move failed: User ${userId} lacks 'editor' permission in target workspace`);
+                    return res.status(403).json({ message: "No 'editor' permission" });
                 }
 
                 finalWorkspaceId = targetWorkspaceId;
-            }else {
+            } else {
                 finalWorkspaceId = null;
                 finalOwnerId = userId;
             }
@@ -447,7 +506,7 @@ async function moveFolder(req,res) {
 
         const isCircular = await isCircularMove(sourceFolder._id, newParentId);
         if (isCircular) {
-            return res.status(400).json({message: "Cannot move a folder into its subfolder"});
+            return res.status(400).json({ message: "Cannot move a folder into its subfolder" });
         }
         
         sourceFolder.parentId = newParentId || null;
@@ -455,9 +514,11 @@ async function moveFolder(req,res) {
         sourceFolder.createdBy = finalOwnerId;
         await sourceFolder.save();
 
-        return res.json({message: "Folder moved successfully", data: sourceFolder});
-    } catch(err) {
-        return res.status(500).json({message: err.message});
+        console.log(`[FolderController] Successfully moved folder ${folderId}`);
+        return res.json({ message: "Folder moved successfully", data: sourceFolder });
+    } catch (err) {
+        console.error(`[FolderController] System error in moveFolder:`, err.message);
+        return res.status(500).json({ message: err.message });
     }
 }
 
@@ -472,10 +533,12 @@ async function getTrashedFolders(req, res) {
         if (workspaceId) {
             const workspace = await Workspace.findById(workspaceId);
             if (!workspace) {
+                console.warn(`[FolderController] Get trash failed: Workspace ${workspaceId} not found`);
                 return res.status(404).json({ message: "Workspace not found" });
             }
             const member = workspace.members.find((m) => m.userId.toString() === userId);
             if (!member) {
+                console.warn(`[FolderController] Get trash failed: User ${userId} not in workspace ${workspaceId}`);
                 return res.status(403).json({ message: "Không có quyền truy cập" });
             }
 
@@ -485,10 +548,12 @@ async function getTrashedFolders(req, res) {
             query.workspaceId = null;
         }
 
-        const trashedFolders = await Folder.find(query).setOptions({includeDeleted: true}).sort({ deletedAt: -1 });
+        const trashedFolders = await Folder.find(query).setOptions({ includeDeleted: true }).sort({ deletedAt: -1 });
+        console.log(`[FolderController] Successfully fetched ${trashedFolders.length} trashed folders`);
         return res.json({ success: true, data: trashedFolders });
 
-    } catch(err) {
+    } catch (err) {
+        console.error(`[FolderController] System error in getTrashedFolders:`, err.message);
         return res.status(500).json({ message: err.message });
     }
 }
@@ -505,6 +570,7 @@ async function emptyTrashFolder(req, res) {
     }).setOptions({ includeDeleted: true });
 
     if (trashedFolders.length === 0) {
+      console.log(`[FolderController] Empty trash: No folders found in trash for user ${userId}`);
       return res.json({ message: 'Trash is empty' });
     }
 
@@ -514,18 +580,22 @@ async function emptyTrashFolder(req, res) {
       allFolderIds.push(f._id.toString(), ...descendants);
     }
     allFolderIds = [...new Set(allFolderIds)];
+    console.log(`[FolderController] Preparing to permanently delete ${allFolderIds.length} folders`);
 
     try {
+      console.log(`[FolderController] Calling File Service to force delete files in emptied folders`);
       await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders/force`, {
           data:    { folderIds: allFolderIds },
           headers: { Authorization: req.headers.authorization },
         }
       );
     } catch (err) {
-        console.error("[workspace-service] Error while call File Service clean the files:", err.message);
-        return res.status(500).json({message: "Error system when cleaning all the files"});
+        console.error(`[FolderController] Failed to force delete internal files via File Service:`, err.message);
+        return res.status(500).json({ message: "Error system when cleaning all the files" });
     }
+    
     await Folder.deleteMany({ _id: { $in: allFolderIds } });
+    console.log(`[FolderController] Successfully deleted ${allFolderIds.length} folders from MongoDB`);
 
     try {
       await addJob(
@@ -534,12 +604,14 @@ async function emptyTrashFolder(req, res) {
         { allFolderIds, actorId: userId },
         { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_TRASHED, `empty-folder-trash-${userId}`) }
       );
+      console.log(`[FolderController] Enqueued FOLDER_TRASHED job for empty trash operation`);
     } catch (jobErr) {
-      console.error('[Queue Error] emptyTrashFolder:', jobErr.message);
+      console.error(`[Queue Error] emptyTrashFolder failed to enqueue job:`, jobErr.message);
     }
 
     return res.json({ message: `Emptied ${trashedFolders.length} folders from trash` });
   } catch (err) {
+    console.error(`[FolderController] System error in emptyTrashFolder:`, err.message);
     return res.status(500).json({ message: err.message });
   }
 }
@@ -549,27 +621,33 @@ async function forceDeleteFolder(req, res) {
   try {
     const userId   = req.user.userId;
     const folderId = req.params.id;
+    console.log(`[FolderController] Request to force delete folder ${folderId} by user ${userId}`);
 
     const folder = await Folder.findById(folderId)
       .setOptions({ includeDeleted: true });
 
     if (!folder) {
+      console.warn(`[FolderController] Force delete failed: Folder not found. ID: ${folderId}`);
       return res.status(404).json({ message: 'Folder not found' });
     }
     if (!folder.deletedAt) {
+      console.warn(`[FolderController] Force delete failed: Folder ${folderId} is not in trash`);
       return res.status(400).json({ message: 'Folder is not in trash. Move to trash first' });
     }
     if (!folder.workspaceId) {
       if (folder.createdBy.toString() !== userId) {
+        console.warn(`[FolderController] Force delete failed: Personal folder does not belong to user ${userId}`);
         return res.status(403).json({ message: 'No permission to force delete this folder' });
       }
     } else {
       const workspace = await Workspace.findById(folder.workspaceId);
       if (!workspace) {
+        console.warn(`[FolderController] Force delete failed: Workspace ${folder.workspaceId} not found`);
         return res.status(404).json({ message: 'Workspace not found' });
       }
       const member = workspace.members.find((m) => m.userId.toString() === userId);
       if (!member || member.role !== 'ADMIN') {
+        console.warn(`[FolderController] Force delete failed: User ${userId} is not Admin in workspace`);
         return res.status(403).json({ message: 'Only Admin can force delete folder' });
       }
     }
@@ -578,17 +656,19 @@ async function forceDeleteFolder(req, res) {
     const allFolderIds   = [folderId, ...childFolderIds];
 
     try {
+      console.log(`[FolderController] Calling File Service to force delete files in folder hierarchy ${folderId}`);
       await axios.delete(`${FILE_SERVICE_URL}/api/files/internal/by-folders/force`, {
           data:    { folderIds: allFolderIds },
           headers: { Authorization: req.headers.authorization },
         }
       );
     } catch (err) {
-        console.error("[workspace-service] Error while call File Service force force file:", err.message);
-        return res.status(500).json({message: "Error system when force delete file"});
+        console.error(`[FolderController] Failed to force delete internal files via File Service:`, err.message);
+        return res.status(500).json({ message: "Error system when force delete file" });
     }
 
     await Folder.deleteMany({ _id: { $in: allFolderIds } });
+    console.log(`[FolderController] Successfully force-deleted folder hierarchy ${folderId} from MongoDB`);
 
     try {
       await addJob(
@@ -597,12 +677,14 @@ async function forceDeleteFolder(req, res) {
         { allFolderIds, actorId: userId },
         { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FOLDER_TRASHED, folderId) }
       );
+      console.log(`[FolderController] Enqueued FOLDER_TRASHED job for force delete operation`);
     } catch (jobErr) {
-      console.error('[Queue Error] forceDeleteFolder:', jobErr.message);
+      console.error(`[Queue Error] forceDeleteFolder failed to enqueue job:`, jobErr.message);
     }
 
     return res.json({ message: 'Folder permanently deleted' });
   } catch (err) {
+    console.error(`[FolderController] System error in forceDeleteFolder:`, err.message);
     return res.status(500).json({ message: err.message });
   }
 }
