@@ -35,12 +35,19 @@ async function deleteByWorkspace(workspaceId) {
     await collection.delete({where: {workspaceId}});
 }
 
-async function query({embedding, nResults=10, where}) {
+async function query({embedding, nResults=10, where, contentType}) {
     try {
+        let finalWhere = where || undefined;
+        if (contentType && where) {
+            finalWhere = {$and: [where, {contentType}]};
+        }else if (contentType) {
+            finalWhere = {contentType};
+        }
+
         return await collection.query({
             queryEmbeddings: [embedding],
             nResults,
-            where: where || undefined,
+            where: finalWhere,
         }); 
     } catch(err) {
         if (err.message?.includes('no embeddings') || err.message?.includes('no documents')) {

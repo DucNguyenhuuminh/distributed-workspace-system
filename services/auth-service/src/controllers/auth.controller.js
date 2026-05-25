@@ -82,7 +82,8 @@ async function login (req,res) {
 //-------GET /api/auth/profile-----------
 async function getProfile (req,res) {
     try {
-        const user = await User.findById(req.user.userId).select('-password');
+        const userId = req.user.userId;
+        const user = await User.findById(userId).select('-password');
         if (!user) {
             console.warn(`[AuthController] Not found profile for userId: ${userId}`);
             return res.status(404).json({message: "User not found"});

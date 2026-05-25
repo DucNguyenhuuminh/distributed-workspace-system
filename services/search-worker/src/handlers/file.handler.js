@@ -3,43 +3,75 @@ const chromaService = require('../config/chroma.config');
 const extractService = require('../services/extract.service');
 const embedService = require('../services/embed.service');
 
-async function indexDocument({fileId, minioObjectPath, mimeType, originalName, workspaceId, uploadedBy}) {
-  if (!fileId) {
-    console.error('[FileHandler] Missing fileId:', {fileId, minioObjectPath});
+async function indexDocument({fileId, objectName, mimeType, originalName, workspaceId, uploadedBy}) {
+  if (!fileId || !objectName) {
+    console.error('[FileHandler] Missing fileId or objectName:', {fileId, objectName});
     return;
   }
-  if (!minioObjectPath) {
-    console.error('[FileHandler] Missing minioObjectPath:', {fileId, minioObjectPath});
-  }
-  if (!extractService.isSupportedMime(mimeType)) {
-      console.log(`[FileHandler] Skipping unsupported MIME type: ${mimeType}`);
-      return;
+  const category = extractService.getMimeCategory(mimeType);
+  if (!category) {
+    console.log(`[FileHandler] Skip — unsupported MIME: ${mimeType}`);
+    return;
   }
 
   try {
-    console.log(`[FileHandler] Processing: fileId: ${fileId}, path: ${minioObjectPath}`);
-    const buffer = await extractService.downloadFile(minioObjectPath, originalName);
-    const text = await extractService.extract(buffer, mimeType);
+    console.log(`[FileHandler] Processing: fileId: ${fileId}, path: ${objectName}`);
+    const buffer = await extractService.downloadFile(objectName, originalName);
 
-    if (!text || text.length === 0) {
-        console.log(`[FileHandler]  No text extracted from document ${fileId}`);
+    let embedding;
+    let documentText;
+    
+    if (category === 'text') {
+      const text = await extractService.extractText(buffer, mimeType);
+      if (!text || text.length === 0) {
+        console.log(`[FileHandler] Skip — no text: ${fileId}`);
         return;
+      }
+      const meta = await extractService.extractMetadata(buffer, mimeType);
+      const enrichedText = buildEnrichedText(text, meta);
+      embedding    = await embedService.embed(enrichedText.slice(0, 512));
+      documentText = enrichedText.slice(0, 5000);
+    } else if (category === 'image') {
+      embedding    = await embedService.embedImage(buffer, mimeType);
+      documentText = `[Image] ${originalName || 'image file'}`;
     }
 
-    const embedding = await embedService.embed(text.slice(0,512));
-
     await chromaService.upsert({
-        id: fileId,
-        embedding,
-        document: text.slice(0, 5000),
-        metadata: {fileId, workspaceId: workspaceId || null, uploadedBy, mimeType},
-    });
+    id:        fileId,
+    embedding,
+    document:  documentText,
+    metadata: {
+      documentId: fileId,
+      workspaceId:  workspaceId  || '',
+      uploadedBy:   uploadedBy   || '',
+      mimeType,
+      contentType:  category, 
+      originalName: originalName || '',
+    },
+  })
 
     console.log(`[FileHandler] Indexed: ${fileId}`);
   } catch(err) {
     console.error(`[FileHandler] Failed to index ${fileId}:`,err.message);
     throw err;
   }
+}
+
+function buildEnrichedText(text, meta) {
+  const parts = [text];
+
+  // Thêm tiêu đề tài liệu nếu có
+  if (meta['dc:title'])         parts.unshift(`Title: ${meta['dc:title']}`);
+  if (meta['dc:subject'])       parts.push(`Subject: ${meta['dc:subject']}`);
+  if (meta['dc:description'])   parts.push(`Description: ${meta['dc:description']}`);
+
+  // Thêm tác giả
+  if (meta['dc:creator'])       parts.push(`Author: ${meta['dc:creator']}`);
+
+  // Keywords giúp tìm kiếm tốt hơn
+  if (meta['meta:keyword'])     parts.push(`Keywords: ${meta['meta:keyword']}`);
+
+  return parts.join('\n');
 }
 
 async function deleteFromChroma(ids) {
@@ -69,8 +101,8 @@ const forwardToNotification = async (eventName, data) => {
 const fileHandlers = {
   [EVENTS.FILE_MERGED]:   async (job) => {
     const data = job.data;
-    console.log(`[FileHandler] FILE_MERGED —`, {fileId: data.fileId, minioObjectPath: data.minioObjectPath});
-    if (!data.fileId || !data.minioObjectPath) {
+    console.log(`[FileHandler] FILE_MERGED —`, {fileId: data.fileId, objectName: data.objectName});
+    if (!data.fileId || !data.objectName) {
       console.error('[FileHandler] Invalid FILE_MERGED data:', data);
       return;
     }
@@ -86,11 +118,11 @@ const fileHandlers = {
   },
 
   [EVENTS.FILE_RESTORED]: async (job) => {
-    const {fileId, minioObjectPath, mimeType, originalName, workspaceId, uploadedBy} = job.data;
+    const {fileId, objectName, mimeType, originalName, workspaceId, uploadedBy} = job.data;
     console.log(`[FileHandler] FILE_RESTORED — ${fileId}`);
     await indexDocument({
       fileId, 
-      minioObjectPath, 
+      objectName, 
       mimeType,
       originalName: originalName || ' ',
       workspaceId, 
@@ -99,12 +131,12 @@ const fileHandlers = {
   },
 
   [EVENTS.FILE_MOVED]:    async (job) => {
-    const { fileId, minioObjectPath, mimeType, originalName, newWorkspaceId, uploadedBy } = job.data;
+    const { fileId, objectName, mimeType, originalName, newWorkspaceId, uploadedBy } = job.data;
     console.log(`[FileHandler] FILE_MOVED — ${fileId}`);
     await chromaService.deleteById(fileId);
     await indexDocument({ 
       fileId, 
-      minioObjectPath, 
+      objectName, 
       mimeType,
       originalName: originalName || ' ',
       workspaceId: newWorkspaceId || null, 

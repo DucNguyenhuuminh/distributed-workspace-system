@@ -5,7 +5,6 @@ jest.mock('shared', () => {
     addJob:              jest.fn().mockResolvedValue({ id: 'job-mock' }),
     queueForEvent:       jest.fn((e) => `queue:${e}`),
     jobIdFor:            jest.fn((e, id) => `${e}_${id}`),
-    // 🟢 ĐÃ FIX 1: Khai báo ĐẦY ĐỦ các EVENTS được dùng trong Controller
     EVENTS: {
       FILE_UPLOAD:   'file.upload',
       FILE_MERGED:   'file.merged',
@@ -16,7 +15,7 @@ jest.mock('shared', () => {
     },
     DEFAULT_JOB_OPTIONS: { attempts: 3 },
     verifyToken: (req, res, next) => {
-      req.user = { userId: 'user-001' }; // Giả lập user luôn đăng nhập thành công
+      req.user = { userId: 'user-001' }; 
       next();
     },
     validateRequest: (req, res, next) => next(),

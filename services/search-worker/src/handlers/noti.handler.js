@@ -1,5 +1,6 @@
 const {EVENTS} = require('shared');
 const notificationService = require('../services/noti.service');
+const { nodeKeyToRedisOptions } = require('ioredis/built/cluster/util');
 
 const notiHandlers = {
     // ── File events ──────────────────────────────────────
@@ -97,6 +98,18 @@ const notiHandlers = {
       message:  `Tài khoản ${email} đã được tạo thành công`,
       metadata: { email },
     });
+  },
+  
+  [EVENTS.PASSWORD_RESET]: async (job) => {
+    const {userId, email} = job.data;
+    await notificationService.createNotification({
+      userId,
+      actorId: null,
+      type: 'PASSWORD_RESET',
+      title: 'Bạn đã thay đổi mật khẩu thành công',
+      message: `Tài khoản ${email} đã thay đổi mật khẩu thành công`,
+      metadata: {email},
+    })
   },
 
   // ── General ───────────────────────────────────────────

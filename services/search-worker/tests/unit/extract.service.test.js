@@ -1,7 +1,7 @@
 const axios = require('axios');
 const extractService = require('../../src/services/extract.service');
 
-// Chỉ cần mock axios vì logic mới dùng Apache Tika qua API
+// Chỉ cần mock axios vì logic sử dụng Apache Tika qua API
 jest.mock('axios');
 
 describe('Extract Service', () => {
@@ -23,7 +23,7 @@ describe('Extract Service', () => {
   // TEST isSupportedMime
   // ═══════════════════════════════════════════════════════════
   describe('isSupportedMime', () => {
-    test('✅ Trả về true cho các định dạng được hỗ trợ (PDF, Word, Ảnh)', () => {
+    test('✅ Trả về true cho các định dạng được hỗ trợ (PDF, Text, Ảnh)', () => {
       expect(extractService.isSupportedMime('application/pdf')).toBe(true);
       expect(extractService.isSupportedMime('text/plain')).toBe(true);
       expect(extractService.isSupportedMime('image/png')).toBe(true);
@@ -68,58 +68,49 @@ describe('Extract Service', () => {
       await expect(extractService.downloadFile(''))
         .rejects.toThrow('downloadFile: objectName is required, got: ');
 
-      // Đảm bảo không có API nào được gọi
       expect(axios.get).not.toHaveBeenCalled();
     });
 
     test('❌ Ném lỗi nếu gọi API lấy presigned URL thất bại', async () => {
-      // Giả lập lỗi từ Storage Service (VD: sập server hoặc file không tồn tại)
       axios.get.mockRejectedValueOnce(new Error('Storage Service Down'));
 
       await expect(extractService.downloadFile('my-object.pdf'))
         .rejects.toThrow('Storage Service Down');
 
-      // Đảm bảo chỉ gọi API 1 lần rồi dừng
       expect(axios.get).toHaveBeenCalledTimes(1);
     });
 
     test('❌ Ném lỗi nếu API không trả về URL hợp lệ', async () => {
-      // Giả lập API trả về data nhưng thiếu trường `url`
       axios.get.mockResolvedValueOnce({ data: { data: { url: null } } });
 
       await expect(extractService.downloadFile('my-object.pdf'))
         .rejects.toThrow('No download URL returned from storage service');
 
-      // Đảm bảo chỉ gọi API 1 lần rồi dừng (không gọi bước download file)
       expect(axios.get).toHaveBeenCalledTimes(1);
     });
 
     test('❌ Ném lỗi nếu tải file thực tế từ presigned URL bị lỗi', async () => {
-      // Mock call 1: Lấy URL thành công
       axios.get.mockResolvedValueOnce({ data: { data: { url: 'http://minio/file-url' } } });
-      
-      // Mock call 2: Tải file thất bại (VD: Link hết hạn, Network error)
       axios.get.mockRejectedValueOnce(new Error('Network Timeout'));
 
       await expect(extractService.downloadFile('my-object.pdf'))
         .rejects.toThrow('Network Timeout');
 
-      // Đảm bảo API đã được gọi đủ 2 lần trước khi throw error
       expect(axios.get).toHaveBeenCalledTimes(2);
     });
   });
 
   // ═══════════════════════════════════════════════════════════
-  // TEST extract
+  // TEST extractText
   // ═══════════════════════════════════════════════════════════
-  describe('extract', () => {
+  describe('extractText', () => {
     const mockBuffer = Buffer.from('mock-file-content');
 
     test('✅ Extract thành công qua Apache Tika API và tự động trim()', async () => {
       // Giả lập Tika trả về text có khoảng trắng dư thừa
       axios.put.mockResolvedValueOnce({ data: '  Hello from Tika API  \n' });
       
-      const text = await extractService.extract(mockBuffer, 'application/pdf');
+      const text = await extractService.extractText(mockBuffer, 'application/pdf');
       
       expect(text).toBe('Hello from Tika API'); 
       expect(axios.put).toHaveBeenCalledWith(
@@ -134,7 +125,7 @@ describe('Extract Service', () => {
     test('❌ Trả về null nếu Tika trả về text trống (chỉ chứa khoảng trắng)', async () => {
       axios.put.mockResolvedValueOnce({ data: '   \n  ' });
       
-      const text = await extractService.extract(mockBuffer, 'application/pdf');
+      const text = await extractService.extractText(mockBuffer, 'application/pdf');
       
       expect(text).toBeNull();
     });
@@ -142,7 +133,7 @@ describe('Extract Service', () => {
     test('❌ Trả về null nếu API không có field data', async () => {
       axios.put.mockResolvedValueOnce({});
       
-      const text = await extractService.extract(mockBuffer, 'application/pdf');
+      const text = await extractService.extractText(mockBuffer, 'application/pdf');
       
       expect(text).toBeNull();
     });
@@ -150,14 +141,59 @@ describe('Extract Service', () => {
     test('❌ Trả về null và log lỗi nếu Axios gọi Tika bị sập (Timeout, Network Error)', async () => {
       axios.put.mockRejectedValueOnce(new Error('Tika Timeout'));
       
-      const text = await extractService.extract(mockBuffer, 'application/pdf');
+      const text = await extractService.extractText(mockBuffer, 'application/pdf');
       
       expect(text).toBeNull();
-      // Đảm bảo nhánh catch log lỗi đúng định dạng
+      // Đảm bảo nhánh catch log lỗi đúng định dạng từ controller
       expect(console.error).toHaveBeenCalledWith(
         '[ExtractionService] Tika error for application/pdf:', 
         'Tika Timeout'
       );
     });
   });
+
+  // ═══════════════════════════════════════════════════════════
+  // TEST extractMetadata
+  // ═══════════════════════════════════════════════════════════
+  describe('extractMetadata', () => {
+    const mockBuffer = Buffer.from('mock-file-content');
+
+    test('✅ Trích xuất metadata thành công', async () => {
+      const mockMeta = { Author: 'Admin', 'Content-Type': 'application/pdf' };
+      axios.put.mockResolvedValueOnce({ data: mockMeta });
+      
+      const meta = await extractService.extractMetadata(mockBuffer, 'application/pdf');
+      
+      expect(meta).toEqual(mockMeta); 
+      expect(axios.put).toHaveBeenCalledWith(
+        expect.stringContaining('/meta'),
+        mockBuffer,
+        expect.objectContaining({
+          headers: { 'Content-Type': 'application/pdf', 'Accept': 'application/json' }
+        })
+      );
+    });
+
+    test('✅ Trả về object rỗng {} nếu API trả về undefined/null', async () => {
+      axios.put.mockResolvedValueOnce({}); // Không có data
+      
+      const meta = await extractService.extractMetadata(mockBuffer, 'application/pdf');
+      
+      expect(meta).toEqual({});
+    });
+
+    test('❌ Trả về object rỗng {} và log lỗi nếu Tika bị lỗi (Network/Timeout)', async () => {
+      axios.put.mockRejectedValueOnce(new Error('Tika Metadata Timeout'));
+      
+      const meta = await extractService.extractMetadata(mockBuffer, 'application/pdf');
+      
+      expect(meta).toEqual({});
+      // Đảm bảo nhánh catch log đúng lỗi
+      expect(console.error).toHaveBeenCalledWith(
+        '[ExtractService] Tika metadata error:', 
+        'Tika Metadata Timeout'
+      );
+    });
+  });
+
 });

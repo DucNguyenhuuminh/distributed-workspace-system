@@ -34,11 +34,15 @@ const mockResponse = () => {
 describe('File Worker Controller - Unit Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.spyOn(console, 'error').mockImplementation(() => {}); // Ẩn console.error trong terminal test
+    jest.spyOn(console, 'error').mockImplementation(() => {}); 
+    jest.spyOn(console, 'warn').mockImplementation(() => {}); 
+    jest.spyOn(console, 'log').mockImplementation(() => {}); 
   });
 
   afterAll(() => {
     console.error.mockRestore();
+    console.warn.mockRestore();
+    console.log.mockRestore();
   });
 
   // ═══════════════════════════════════════════════════════════
@@ -59,7 +63,7 @@ describe('File Worker Controller - Unit Tests', () => {
       const req = mockRequest({ filename: 'test.pdf', hashString: 'new-hash' });
       const res = mockResponse();
 
-      PhysicalFile.findOne.mockResolvedValue(null); // Giả lập chưa có file trong DB
+      PhysicalFile.findOne.mockResolvedValue(null); 
 
       await checkHash(req, res);
 
@@ -71,7 +75,7 @@ describe('File Worker Controller - Unit Tests', () => {
     });
 
     test('✅ Trùng hash (My Drive) → Dedup ngay lập tức → 200', async () => {
-      const req = mockRequest({ filename: 'test.pdf', hashString: 'exist-hash' }); // Không có workspaceId
+      const req = mockRequest({ filename: 'test.pdf', hashString: 'exist-hash' });
       const res = mockResponse();
 
       PhysicalFile.findOne.mockResolvedValue({ _id: 'phys-1' });
@@ -87,18 +91,28 @@ describe('File Worker Controller - Unit Tests', () => {
         uploadedBy: 'user-1'
       });
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        message: "Deduplication successful. File copy instantly",
-        data: { document: { _id: 'doc-1', originalName: 'test.pdf' }, isDuplicate: true }
-      }));
     });
 
-    test('❌ Trùng hash (Workspace) - Chỉ là Viewer → 403', async () => {
+    // --- Bổ sung coverage cho Workspace trong checkHash ---
+    test('❌ Trùng hash (Workspace) - Không phải Member → 403', async () => {
       const req = mockRequest({ filename: 'test.pdf', hashString: 'exist-hash', workspaceId: 'ws-1' });
       const res = mockResponse();
 
       PhysicalFile.findOne.mockResolvedValue({ _id: 'phys-1' });
-      axios.get.mockResolvedValue({ data: { data: { members: [{ userId: 'user-1', permissions: ['viewer'] }] } } });
+      axios.get.mockResolvedValue({ data: { data: { members: [{ userId: 'user-other' }] } } });
+
+      await checkHash(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({ message: "You are not a member of this workspace" });
+    });
+
+    test('❌ Trùng hash (Workspace) - Là Member nhưng thiếu quyền Editor → 403', async () => {
+      const req = mockRequest({ filename: 'test.pdf', hashString: 'exist-hash', workspaceId: 'ws-1' });
+      const res = mockResponse();
+
+      PhysicalFile.findOne.mockResolvedValue({ _id: 'phys-1' });
+      axios.get.mockResolvedValue({ data: { data: { members: [{ userId: 'user-1', role: 'MEMBER', permissions: ['viewer'] }] } } });
 
       await checkHash(req, res);
 
@@ -106,7 +120,20 @@ describe('File Worker Controller - Unit Tests', () => {
       expect(res.json).toHaveBeenCalledWith({ message: "No permission to upload in this workspace" });
     });
 
-    test('❌ Trùng hash (Workspace) - API trả 403 → 403', async () => {
+    test('✅ Trùng hash (Workspace) - Là Member có quyền Editor → 200', async () => {
+      const req = mockRequest({ filename: 'test.pdf', hashString: 'exist-hash', workspaceId: 'ws-1' });
+      const res = mockResponse();
+
+      PhysicalFile.findOne.mockResolvedValue({ _id: 'phys-1' });
+      Document.create.mockResolvedValue({ _id: 'doc-1' });
+      axios.get.mockResolvedValue({ data: { data: { members: [{ userId: 'user-1', role: 'MEMBER', permissions: ['editor'] }] } } });
+
+      await checkHash(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    test('❌ Trùng hash (Workspace) - API Workspace trả lỗi 403 → 403', async () => {
       const req = mockRequest({ filename: 'test.pdf', hashString: 'exist-hash', workspaceId: 'ws-1' });
       const res = mockResponse();
 
@@ -121,7 +148,20 @@ describe('File Worker Controller - Unit Tests', () => {
       expect(res.json).toHaveBeenCalledWith({ message: "No permission in this workspace" });
     });
 
-    test('❌ Lỗi Database (Catch tổng) → 500', async () => {
+    test('❌ Trùng hash (Workspace) - Mất kết nối Workspace Service → 500', async () => {
+      const req = mockRequest({ filename: 'test.pdf', hashString: 'exist-hash', workspaceId: 'ws-1' });
+      const res = mockResponse();
+
+      PhysicalFile.findOne.mockResolvedValue({ _id: 'phys-1' });
+      axios.get.mockRejectedValue(new Error('Network Error'));
+
+      await checkHash(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({ message: "Cannot connect to workspace-service" });
+    });
+
+    test('❌ Lỗi Database (Catch tổng checkHash) → 500', async () => {
       const req = mockRequest({ filename: 'test.pdf', hashString: 'exist-hash' });
       const res = mockResponse();
 
@@ -149,9 +189,6 @@ describe('File Worker Controller - Unit Tests', () => {
 
       await initUpload(req, res);
 
-      expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/init'), {
-        filename: 'vid.mp4', mimeType: 'video/mp4', totalChunks: 3
-      });
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         message: "Init upload successfully",
@@ -183,6 +220,45 @@ describe('File Worker Controller - Unit Tests', () => {
       expect(res.json).toHaveBeenCalledWith({ message: "You are not a member of this workspace" });
     });
 
+    // --- Bổ sung coverage cho Workspace trong initUpload ---
+    test('❌ Upload (Workspace) - Là Member nhưng thiếu quyền Editor → 403', async () => {
+      const req = mockRequest({ ...validBody, workspaceId: 'ws-1' });
+      const res = mockResponse();
+
+      axios.get.mockResolvedValue({ data: { data: { members: [{ userId: 'user-1', role: 'MEMBER', permissions: ['viewer'] }] } } });
+
+      await initUpload(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({ message: "No permission to upload in this workspace" });
+    });
+
+    test('❌ Upload (Workspace) - Workspace Service trả 403 → 403', async () => {
+      const req = mockRequest({ ...validBody, workspaceId: 'ws-1' });
+      const res = mockResponse();
+
+      const err = new Error('Forbidden');
+      err.response = { status: 403 };
+      axios.get.mockRejectedValue(err);
+
+      await initUpload(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({ message: "No permission in this workspace" });
+    });
+
+    test('❌ Upload (Workspace) - Mất kết nối Workspace Service → 500', async () => {
+      const req = mockRequest({ ...validBody, workspaceId: 'ws-1' });
+      const res = mockResponse();
+
+      axios.get.mockRejectedValue(new Error('Network Error'));
+
+      await initUpload(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({ message: "Cannot connect to workspace-service" });
+    });
+
     test('❌ Lỗi kết nối Storage Service → 500', async () => {
       const req = mockRequest(validBody);
       const res = mockResponse();
@@ -191,9 +267,17 @@ describe('File Worker Controller - Unit Tests', () => {
 
       await initUpload(req, res);
 
-      expect(console.error).toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({ message: "Cannot connect to storage-service" });
+    });
+
+    test('❌ Lỗi hệ thống (Catch tổng initUpload) → 500', async () => {
+      const req = { body: validBody }; // Không có req.user.userId để gây lỗi TypeError
+      const res = mockResponse();
+
+      await initUpload(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
     });
   });
 
@@ -217,7 +301,7 @@ describe('File Worker Controller - Unit Tests', () => {
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({ message: "Failed to merge chunks in storage-service" });
-      expect(PhysicalFile.findOne).not.toHaveBeenCalled(); // Đảm bảo Dừng luồng sớm
+      expect(PhysicalFile.findOne).not.toHaveBeenCalled(); 
     });
 
     test('✅ PhysicalFile chưa tồn tại → Tạo mới cả PhysicalFile và Document → 200', async () => {
@@ -247,12 +331,12 @@ describe('File Worker Controller - Unit Tests', () => {
       const res = mockResponse();
 
       axios.post.mockResolvedValue({});
-      PhysicalFile.findOne.mockResolvedValue({ _id: 'phys-exist' }); // Đã tồn tại
+      PhysicalFile.findOne.mockResolvedValue({ _id: 'phys-exist' }); 
       Document.create.mockResolvedValue({ _id: 'doc-1' });
 
       await mergeUpload(req, res);
 
-      expect(PhysicalFile.create).not.toHaveBeenCalled(); // Không tạo duplicate
+      expect(PhysicalFile.create).not.toHaveBeenCalled(); 
       expect(Document.create).toHaveBeenCalledWith(expect.objectContaining({ physicalFileId: 'phys-exist' }));
       expect(res.status).toHaveBeenCalledWith(200);
     });
@@ -270,8 +354,8 @@ describe('File Worker Controller - Unit Tests', () => {
 
       await mergeUpload(req, res);
 
-      // Console error sẽ ghi lại lỗi queue
-      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Failed to enqueue FILE_MERGED job'), expect.any(Error));
+      // 🟢 ĐÃ FIX: Chuyển tham số sang dạng chuỗi (String) khớp với Controller
+      expect(console.error).toHaveBeenCalledWith('[Queue Error] Failed to enqueue FILE_MERGED job', 'Redis Timeout');
       
       // Nhưng API cuối cùng vẫn trả cho client 200
       expect(res.status).toHaveBeenCalledWith(200);

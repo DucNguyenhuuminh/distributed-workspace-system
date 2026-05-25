@@ -469,15 +469,31 @@ describe('DELETE /api/workspaces/:id', () => {
     expect(res.body.message).toBe('Only Admin can perform this action');
   });
 
-  test('❌ file-service lỗi → 500', async () => {
+  test('✅ Xóa workspace thành công dù file-service bị lỗi (Bắt lỗi an toàn) → 200', async () => {
     const ws = getFreshWorkspace();
     Workspace.findById.mockResolvedValue(ws);
+    
+    // Giả lập file-service bị sập
     axios.delete.mockRejectedValue(new Error('file-service down'));
+    
+    // Mock các hàm bên dưới để tiến trình tiếp tục chạy
+    Folder.updateMany.mockResolvedValue({});
+    addJob.mockResolvedValue(true);
 
     const res = await request(app)
       .delete(`/api/workspaces/${ws._id}`);
 
-    expect(res.status).toBe(500);
+    // KỲ VỌNG: API vẫn trả về 200 vì lỗi axios đã được try-catch nội bộ nuốt đi
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe('Deleted workspace');
+    
+    // KỲ VỌNG: Dù file-service lỗi, folder và workspace vẫn được xóa mềm (soft-delete)
+    expect(Folder.updateMany).toHaveBeenCalledWith(
+      { workspaceId: ws._id },
+      { deletedAt: expect.any(Date) }
+    );
+    expect(ws.deletedAt).toBeInstanceOf(Date);
+    expect(ws.save).toHaveBeenCalled();
   });
 
   test('❌ DB lỗi → 500', async () => {

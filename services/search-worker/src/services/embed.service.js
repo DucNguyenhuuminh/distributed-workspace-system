@@ -1,19 +1,31 @@
-const {pipeline} = require('@xenova/transformers');
+const {pipeline, env} = require('@xenova/transformers');
 
-const MODEL_NAME = 'Xenova/all-MiniLM-L6-v2';
-let extractor = null;
+const TEXT_MODEL = 'Xenova/all-MiniLM-L6-v2';
+const CLIP_MODEL = 'Xenova/clip-vit-base-patch32';
 
-async function loadModel() {
-    if (!extractor) {
+let textExtractor = null;
+let clipExtractor = null;
+
+async function loadTextModel() {
+    if (!textExtractor) {
         console.log('[EmbedService] Loading model......');
-        extractor = await pipeline('feature-extraction', MODEL_NAME);
+        textExtractor = await pipeline('feature-extraction', TEXT_MODEL);
         console.log('[EmbedService] Model loaded');
     }
-    return extractor;
+    return textExtractor;
+}
+
+async function loadClipModel() {
+    if (!clipExtractor) {
+        console.log('[EmbedService] Loading CLIP model...');
+        clipExtractor = await pipeline('zero-shot-image-classification', CLIP_MODEL);
+        console.log('[EmbedService] CLIP model loaded');
+    }
+    return clipExtractor;
 }
 
 async function embed(text) {
-    const model = await loadModel();
+    const model = await loadTextModel();
     const output = await model(text, {
         pooling: 'mean',
         normalize: true,
@@ -21,13 +33,35 @@ async function embed(text) {
     return Array.from(output.data);
 }
 
-async function embedBatch(texts) {
-    const model = await loadModel();
-    const outputs = await model(texts, {
-        pooling: 'mean',
-        normalize: true,
-    });
-    return Array.from(outputs.data);
+async function embedImage(imageBuffer, mimeType) {
+    const {RawImage} = require ('@xenova/transformers');
+    const model = await loadClipModel();
+    const image = await RawImage.fromBlob(
+        new Blob([imageBuffer], {type: mimeType})
+    );
+    const output = await model.processor(image);
+    const features = await model.model.get_image_features(output);
+    return Array.from(features.data); 
 }
 
-module.exports = {embed, embedBatch, loadModel, MODEL_NAME};
+// async function embedBatch(texts) {
+//     const model = await loadModel();
+//     const outputs = await model(texts, {
+//         pooling: 'mean',
+//         normalize: true,
+//     });
+//     return Array.from(outputs.data);
+// }
+
+async function loadModels() {
+    await loadTextModel();
+    await loadClipModel();
+}
+
+module.exports = {
+    embed, 
+    embedImage, 
+    loadModels, 
+    TEXT_MODEL, 
+    CLIP_MODEL
+};

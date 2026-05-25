@@ -83,7 +83,7 @@ async function createShareLink(req,res) {
         const shareUrl = `${process.env.FRONTEND_URL}/share/${shareLink.token}`;
         console.log(`[ShareController] Successfully created share link. Token: ${shareLink.token}`);
 
-        return res.json({
+        return res.status(201).json({
             message: 'Share link created successfully',
             data: {
                 token:       shareLink.token,

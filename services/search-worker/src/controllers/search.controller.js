@@ -5,7 +5,7 @@ const embedService = require('../services/embed.service');
 //-------- GET /api/search/---------------
 async function search(req, res) {
   try {
-    const { q, workspaceId } = req.query;
+    const { q, workspaceId, type } = req.query;
     const userId             = req.user.userId;
 
     if (!q || q.trim().length === 0) {
@@ -40,7 +40,7 @@ async function search(req, res) {
     const results = await chromaService.query({
       embedding ,  
       nResults: 10,
-      where,
+      where: type || undefined,
     });
 
     if (!results.ids[0]?.length) {
@@ -55,6 +55,7 @@ async function search(req, res) {
       score: results.distances?.[0]?.[i] !== undefined ? parseFloat((1 - results.distances[0][i]).toFixed(4)) : 0,
       preview:    results.documents[0][i]?.slice(0, 200),
       metadata:   results.metadatas[0][i],
+      contentType: results.metadatas[0][i]?.contentType || 'text',
     }));
 
     try {

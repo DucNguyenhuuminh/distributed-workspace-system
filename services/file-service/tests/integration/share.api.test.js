@@ -122,7 +122,7 @@ describe('[Integration] ShareLink API', () => {
       .set('x-user-id', ownerId.toString())
       .send({ permissions: ['view'] });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(res.body.data.token).toBeDefined();
   });
 

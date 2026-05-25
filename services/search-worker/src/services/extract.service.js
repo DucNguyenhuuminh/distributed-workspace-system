@@ -1,8 +1,7 @@
 const axios = require('axios');
 const TIKA_URL = process.env.TIKA_URL;
 
-const SUPPORTED_MIME_TYPES = [
-    // Documents
+const TEXT_MIME_TYPES = [
     'application/pdf',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -10,18 +9,28 @@ const SUPPORTED_MIME_TYPES = [
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/vnd.ms-powerpoint',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    // Text
     'text/plain',
     'text/html',
     'text/csv',
-    // Image
+];
+
+const IMAGE_MIME_TYPES = [
     'image/png',
     'image/jpeg',
     'image/jpg',
+    'image/webp',
+    'image/gif',
+    'image/bmp',
 ];
 
+function getMimeCategory(mimeType) {
+  if (TEXT_MIME_TYPES.includes(mimeType))  return 'text';
+  if (IMAGE_MIME_TYPES.includes(mimeType)) return 'image';
+  return null;
+}
+
 function isSupportedMime(mimeType) {
-    return SUPPORTED_MIME_TYPES.includes(mimeType);
+    return getMimeCategory(mimeType) !== null;
 }
 
 async function downloadFile(objectName, originalName) {
@@ -36,12 +45,11 @@ async function downloadFile(objectName, originalName) {
     if (!url) {
         throw new Error('No download URL returned from storage service');
     }
-
     const fileResponse = await axios.get(url, {responseType: 'arraybuffer'});
     return Buffer.from(fileResponse.data);
 }
 
-async function extract(buffer, mimeType) {
+async function extractText(buffer, mimeType) {
     try {
         const response = await axios.put(`${TIKA_URL}/tika`, buffer, {
             headers: {
@@ -61,8 +69,26 @@ async function extract(buffer, mimeType) {
     }
 }
 
+async function extractMetadata(buffer, mimeType) {
+    try {
+        const response = await axios.put(`${TIKA_URL}/meta`, buffer, {
+            headers: {
+                'Content-Type': mimeType,
+                'Accept': 'application/json',
+            },
+            maxtBodyLength: Infinity,
+            timeout: 15000,
+        });
+        return response.data || {};
+    } catch(err) {
+        console.error(`[ExtractService] Tika metadata error:`, err.message);
+        return {};
+    }
+}
+
 module.exports = {
     isSupportedMime, 
     downloadFile, 
-    extract
+    extractText,
+    extractMetadata
 };

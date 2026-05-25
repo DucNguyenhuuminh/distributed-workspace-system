@@ -18,11 +18,9 @@ createBullBoard({
     new BullMQAdapter(getQueue(QUEUES.FILE)),
     new BullMQAdapter(getQueue(QUEUES.WORKSPACE)),
     new BullMQAdapter(getQueue(QUEUES.NOTIFICATION)),
-    new BullMQAdapter(getQueue(QUEUES.SEARCH)),
   ],
   serverAdapter,
 });
-
 
 const app = express();
 
@@ -39,7 +37,7 @@ app.use((_, res) =>
 );
 
 async function start() {
-  await embedService.loadModel();
+  await embedService.loadModels();
   console.log('[search-worker] Embedding model ready');
 
   await mongoose.connect(process.env.MONGO_URI);
