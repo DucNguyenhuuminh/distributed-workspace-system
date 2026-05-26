@@ -8,8 +8,7 @@ const app = express();
 
 app.use(helmet());
 app.use(cors({
-    // origin: 'http://localhost:5173',
-    origin: true,
+    origin: process.env.FRONTEND_URL,
     credentials: true
 }));
 
@@ -26,11 +25,11 @@ app.use(morgan((tokens, req, res) => {
 }));
 
 const services = {
-    authService: 'http://127.0.0.1:3001',
-    fileService: 'http://127.0.0.1:3002',
-    workspaceService: 'http://127.0.0.1:3003',
-    searchService: 'http://127.0.0.1:3004',
-    storageService: 'http://127.0.0.1:3005'
+    authService: process.env.AUTH_SERVICE_URL,
+    fileService: process.env.FILE_SERVICE_URL,
+    workspaceService: process.env.WORKSPACE_SERVICE_URL,
+    searchService: process.env.SEARCH_SERVICE_URL,
+    storageService: process.env.STORAGE_SERVICE_URL
 };
 
 app.use((req, res, next) => {
