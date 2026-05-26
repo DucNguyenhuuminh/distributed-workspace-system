@@ -8,7 +8,6 @@ services:
     dockerContext: .
     dockerfilePath: gateway/Dockerfile
     envVars:
-      # Thay vì host.docker.internal, Render dùng tên của Private Service
       - key: AUTH_SERVICE_URL
         value: http://auth-service:3001
       - key: FILE_SERVICE_URL
@@ -23,7 +22,7 @@ services:
         value: https://your-frontend.vercel.app
 
   # 2. AUTH SERVICE (Private)
-  - type: pserv
+  - type: web
     name: auth-service
     env: docker
     dockerContext: .
@@ -43,7 +42,7 @@ services:
         value: http://file-service:3002
 
   # 3. FILE SERVICE (Private)
-  - type: pserv
+  - type: web
     name: file-service
     env: docker
     dockerContext: .
@@ -71,7 +70,7 @@ services:
         value: https://fe-workspace-system.vercel.app
 
   # 4. WORKSPACE SERVICE (Private)
-  - type: pserv
+  - type: web
     name: workspace-service
     env: docker
     dockerContext: .
@@ -89,7 +88,7 @@ services:
         value: http://auth-service:3001
 
   # 5. STORAGE SERVICE (Private)
-  - type: pserv
+  - type: web
     name: storage-service
     env: docker
     dockerContext: .
@@ -108,7 +107,7 @@ services:
       - key: MINIO_USE_SSL
         value: false
   # 6. SEARCH WORKER (Private / Worker)
-  - type: pserv
+  - type: web
     name: search-worker
     env: docker
     dockerContext: .
@@ -135,13 +134,13 @@ services:
       - key: FRONTEND_URL
         value: https://fe-workspace-system.vercel.app
   
-  - type: pserv
+  - type: web
     name: tika-service
     env: docker
     dockerContext: .
     dockerfilePath: services/search-worker/Dockerfile
 
-  - type: pserv
+  - type: web
     name: chroma-service
     env: docker
     dockerContext: .
