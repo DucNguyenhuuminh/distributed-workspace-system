@@ -32,9 +32,9 @@ services:
       - key: NODE_ENV
         value: production
       - key: MONGO_URI
-        value: mongodb+srv://nguyenhuuminhduc2832005_db_user:<db_password>@cluster0.jtcmnwp.mongodb.net/
+        sync: false
       - key: JWT_SECRET
-        value: super_secret_key_change_in_prod
+        sync: false
       - key: JWT_EXPIRES_IN
         value: 7d
       - key: WORKSPACE_SERVICE_URL
@@ -52,13 +52,13 @@ services:
       - key: NODE_ENV
         value: production
       - key: MONGO_URI
-        value: mongodb+srv://nguyenhuuminhduc2832005_db_user:<db_password>@cluster0.jtcmnwp.mongodb.net/
+        sync: false
       - key: JWT_SECRET
-        value: super_secret_key_change_in_prod
+        sync: false
       - key: MINIO_ENDPOINT
         value: https://gmxjhyoufzloeuubumsr.supabase.co
       - key: MINIO_ACCESS_KEY
-        value: sb_publishable_kq8F4TaCIjns8Aa3hm1DAw_M8SsFn2w
+        sync: false
       - key: MINIO_BUCKET
         value: file-storage
       - key: REDIS_URL
@@ -80,11 +80,11 @@ services:
       - key: NODE_ENV
         value: production
       - key: MONGO_URI
-        value: mongodb+srv://nguyenhuuminhduc2832005_db_user:<db_password>@cluster0.jtcmnwp.mongodb.net/
+        sync: false
       - key: JWT_SECRET
-        value: super_secret_key_change_in_prod
+        sync: false
       - key: REDIS_URL
-        value: redis-cli --tls -u redis://default:gQAAAAAAATBhAAIgcDI2YzlhYTM1MGIxM2Y0YzkwYThjMDRlNzc3ZWFmZGJkMQ@dominant-cheetah-77921.upstash.io:6379
+        sync: false
       - key: AUTH_SERVICE_URL
         value: http://auth-service:3001
 
@@ -98,11 +98,11 @@ services:
       - key: NODE_ENV
         value: production
       - key: JWT_SECRET
-        value: super_secret_key_change_in_prod
+        sync: false
       - key: MINIO_ENDPOINT
         value: https://gmxjhyoufzloeuubumsr.supabase.co
       - key: MINIO_ACCESS_KEY
-        value: sb_publishable_kq8F4TaCIjns8Aa3hm1DAw_M8SsFn2w
+        sync: false
       - key: MINIO_BUCKET
         value: file-storage
       - key: MINIO_USE_SSL
@@ -117,15 +117,15 @@ services:
       - key: NODE_ENV
         value: production
       - key: MONGO_URI
-        value: mongodb+srv://nguyenhuuminhduc2832005_db_user:<db_password>@cluster0.jtcmnwp.mongodb.net/
+        sync: false
       - key: JWT_SECRET
-        value: super_secret_key_change_in_prod
+        sync: false
       - key: CHROMA_URL
-        value: 
+        sync: false 
       - key: TIKA-URL
-        value: 
+        sync: false 
       - key: REDIS_URL
-        value: redis-cli --tls -u redis://default:gQAAAAAAATBhAAIgcDI2YzlhYTM1MGIxM2Y0YzkwYThjMDRlNzc3ZWFmZGJkMQ@dominant-cheetah-77921.upstash.io:6379
+        sync: false
       - key: WORKSPACE_SERVICE_URL
         value: http://workspace-service:3003
       - key: STORAGE_SERVICE_URL
