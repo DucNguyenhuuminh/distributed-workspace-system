@@ -64,11 +64,11 @@ async function login (req,res) {
                 globalRole: user.globalRole,
             },
             process.env.JWT_SECRET,
-            {expiresIn: process.env.JWT_EXPIRES_IN || '7d'}
+            {expiresIn: process.env.JWT_EXPIRES_IN}
         );
 
         console.log(`[AuthController] Login successfully, access token for: ${email}`);
-        return res.json({
+        return res.status(200).json({
             message: "Login successfully",
             token,
             user: {_id: user._id, email: user.email, username: user.username, globalRole: user.globalRole}
