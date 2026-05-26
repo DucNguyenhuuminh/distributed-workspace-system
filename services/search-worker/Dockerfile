@@ -1,4 +1,4 @@
-FROM node:18-alpine AS deps
+FROM node:18-alpine
 WORKDIR /app
 COPY services/search-worker/package*.json ./
 COPY shared/package*.json ./shared/
@@ -9,3 +9,6 @@ COPY shared ./shared
 ENV NODE_ENV=production
 EXPOSE 3004
 CMD ["node","src/index.js"]
+
+FROM apache/tika:latest
+FROM chromadb/chroma:latest
