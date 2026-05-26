@@ -1,0 +1,136 @@
+version: "1"
+
+services:
+  # 1. API GATEWAY (Public ra Internet)
+  - type: web
+    name: gateway-service
+    env: docker
+    dockerContext: .
+    dockerfilePath: gateway/Dockerfile
+    envVars:
+      # Thay vì host.docker.internal, Render dùng tên của Private Service
+      - key: AUTH_SERVICE_URL
+        value: http://auth-service:3001
+      - key: FILE_SERVICE_URL
+        value: http://file-service:3002
+      - key: WORKSPACE_SERVICE_URL
+        value: http://workspace-service:3003
+      - key: SEARCH_SERVICE_URL
+        value: http://search-worker:3004
+      - key: STORAGE_SERVICE_URL
+        value: http://storage-service:3005
+      - key: FRONTEND_URL
+        value: https://your-frontend.vercel.app
+
+  # 2. AUTH SERVICE (Private)
+  - type: pserv
+    name: auth-service
+    env: docker
+    dockerContext: .
+    dockerfilePath: services/auth-service/Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        value: mongodb+srv://nguyenhuuminhduc2832005_db_user:<db_password>@cluster0.jtcmnwp.mongodb.net/
+      - key: JWT_SECRET
+        value: super_secret_key_change_in_prod
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: WORKSPACE_SERVICE_URL
+        value: http://workspace-service:3003
+      - key: FILE_SERVICE_URL
+        value: http://file-service:3002
+
+  # 3. FILE SERVICE (Private)
+  - type: pserv
+    name: file-service
+    env: docker
+    dockerContext: .
+    dockerfilePath: services/file-service/Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        value: mongodb+srv://nguyenhuuminhduc2832005_db_user:<db_password>@cluster0.jtcmnwp.mongodb.net/
+      - key: JWT_SECRET
+        value: super_secret_key_change_in_prod
+      - key: MINIO_ENDPOINT
+        value: https://gmxjhyoufzloeuubumsr.supabase.co
+      - key: MINIO_ACCESS_KEY
+        value: sb_publishable_kq8F4TaCIjns8Aa3hm1DAw_M8SsFn2w
+      - key: MINIO_BUCKET
+        value: file-storage
+      - key: REDIS_URL
+        value: redis-cli --tls -u redis://default:gQAAAAAAATBhAAIgcDI2YzlhYTM1MGIxM2Y0YzkwYThjMDRlNzc3ZWFmZGJkMQ@dominant-cheetah-77921.upstash.io:6379
+      - key: WORKSPACE_SERVICE_URL
+        value: http://workspace-service:3003
+      - key: STORAGE_SERVICE_URL
+        value: http://storage-service:3005
+      - key: FRONTEND_URL
+        value: 
+
+  # 4. WORKSPACE SERVICE (Private)
+  - type: pserv
+    name: workspace-service
+    env: docker
+    dockerContext: .
+    dockerfilePath: services/workspace-service/Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        value: mongodb+srv://nguyenhuuminhduc2832005_db_user:<db_password>@cluster0.jtcmnwp.mongodb.net/
+      - key: JWT_SECRET
+        value: super_secret_key_change_in_prod
+      - key: REDIS_URL
+        value: redis-cli --tls -u redis://default:gQAAAAAAATBhAAIgcDI2YzlhYTM1MGIxM2Y0YzkwYThjMDRlNzc3ZWFmZGJkMQ@dominant-cheetah-77921.upstash.io:6379
+      - key: AUTH_SERVICE_URL
+        value: http://auth-service:3001
+
+  # 5. STORAGE SERVICE (Private)
+  - type: pserv
+    name: storage-service
+    env: docker
+    dockerContext: .
+    dockerfilePath: services/storage-service/Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        value: super_secret_key_change_in_prod
+      - key: MINIO_ENDPOINT
+        value: https://gmxjhyoufzloeuubumsr.supabase.co
+      - key: MINIO_ACCESS_KEY
+        value: sb_publishable_kq8F4TaCIjns8Aa3hm1DAw_M8SsFn2w
+      - key: MINIO_BUCKET
+        value: file-storage
+      - key: MINIO_USE_SSL
+        value: false
+  # 6. SEARCH WORKER (Private / Worker)
+  - type: pserv
+    name: search-worker
+    env: docker
+    dockerContext: .
+    dockerfilePath: services/search-worker/Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        value: mongodb+srv://nguyenhuuminhduc2832005_db_user:<db_password>@cluster0.jtcmnwp.mongodb.net/
+      - key: JWT_SECRET
+        value: super_secret_key_change_in_prod
+      - key: CHROMA_URL
+        value: 
+      - key: TIKA-URL
+        value: 
+      - key: REDIS_URL
+        value: redis-cli --tls -u redis://default:gQAAAAAAATBhAAIgcDI2YzlhYTM1MGIxM2Y0YzkwYThjMDRlNzc3ZWFmZGJkMQ@dominant-cheetah-77921.upstash.io:6379
+      - key: WORKSPACE_SERVICE_URL
+        value: http://workspace-service:3003
+      - key: STORAGE_SERVICE_URL
+        value: http://storage-service:3005
+      - key: FILE_SERVICE_URL
+        value: http://file-service:3002
+      - key: FRONTEND_URL
+        value: 
