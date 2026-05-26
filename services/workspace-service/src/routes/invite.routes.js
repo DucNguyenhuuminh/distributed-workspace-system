@@ -10,7 +10,7 @@ const {
   getInviteLinks,
   getMyJoinRequest,
 } = require('../controllers/invite-workspace.controller');
-const { authMiddleware } = require('shared');
+const {authMiddleware} = require('../../../../shared/middlewares/auth.middleware');
 
 router.get('/invite/:token', getInviteInfo);
 

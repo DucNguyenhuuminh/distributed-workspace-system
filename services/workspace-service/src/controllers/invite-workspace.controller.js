@@ -2,7 +2,8 @@ const axios = require('axios');
 const Workspace = require('../models/workspace.model');
 const WorkspaceInvite = require('../models/workspace-invite.model');
 const JoinRequest = require('../models/join-request.model');
-const {addJob, queueForEvent, jobIdFor, DEFAULT_JOB_OPTIONS, EVENTS} = require('shared');
+const {addJob} = require('../../../../shared/queue/queueProducer');
+const {queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('../../../../shared/queue/queue.config');
 
 // ---------POST /api/workspaces/:id/invite ------------------------
 async function createInviteLink(req,res) {

@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('../models/auth.model');
-const { addJob, queueForEvent, jobIdFor, DEFAULT_JOB_OPTIONS, EVENTS } = require('shared');
+const {addJob} = require('../../../../shared/queue/queueProducer');
+const { queueForEvent, jobIdFor, DEFAULT_JOB_OPTIONS, EVENTS } = require('../../../../shared/queue/queue.config');
 
 //-------POST /api/auth/register-----------
 async function register (req,res) {

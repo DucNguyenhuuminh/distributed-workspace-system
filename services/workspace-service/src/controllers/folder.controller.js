@@ -1,9 +1,10 @@
 const Workspace = require('../models/workspace.model');
 const Folder = require('../models/folder.model');
 const axios = require('axios');
-const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL || 'http://localhost:3002';
+const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL;
 
-const {addJob, queueForEvent, jobIdFor, DEFAULT_JOB_OPTIONS, EVENTS} = require('shared');
+const {addJob} = require('../../../../shared/queue/queueProducer');
+const {queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('../../../../shared/queue/queue.config');
 
 //-------------------HELPER--------------------
 async function getBreadcrumbPath(folderId) {

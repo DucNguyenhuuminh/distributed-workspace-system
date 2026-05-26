@@ -5,7 +5,8 @@ const {
     initUploadValidator,
     mergeUploadValidator
 } = require('../validators/file-worker.validator');
-const {verifyToken, validateRequest} = require('shared');
+const {verifyToken} = require('../../../../shared/middlewares/auth.middleware')
+const {validateRequest} = require('../../../../shared/middlewares/validate.middleware');
 
 router.use(verifyToken);
 

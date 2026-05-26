@@ -4,7 +4,8 @@ const Folder = require('../models/folder.model');
 const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL;
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL;
 
-const{addJob, queueForEvent, jobIdFor,EVENTS,DEFAULT_JOB_OPTIONS} = require('shared');
+const {addJob} = require('../../../../shared/queue/queueProducer');
+const {queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('../../../../shared/queue/queue.config');
 
 //-------------------LOGIC--------------------
 

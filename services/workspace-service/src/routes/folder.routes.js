@@ -2,7 +2,7 @@ const router = require('express').Router();
 const {createFolder,renameFolder,deleteFolder,
     moveFolder,getFolders,getFolderById, restoreFolder, getTrashedFolders, emptyTrashFolder, forceDeleteFolder} = require('../controllers/folder.controller');
 const {create_folder_valid,rename_folder_valid,move_folder_valid,validate} = require('../validators/folder.validator');
-const {authMiddleware} = require('shared');
+const {authMiddleware} = require('../../../../shared/middlewares/auth.middleware');
 
 router.use(authMiddleware);
 

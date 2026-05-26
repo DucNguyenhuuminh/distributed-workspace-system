@@ -1,10 +1,11 @@
 const axios = require('axios');
 const Document = require('../models/documents.model');
 const PhysicalFile = require('../models/physical-file.model');
-const WORKSPACE_SERVICE_URL = process.env.WORKSPACE_SERVICE_URL || 'http://localhost:3003';
-const STORAGE_SERVICE_URL = process.env.STORAGE_SERVICE_URL || 'http://localhost:3005';
+const WORKSPACE_SERVICE_URL = process.env.WORKSPACE_SERVICE_URL;
+const STORAGE_SERVICE_URL = process.env.STORAGE_SERVICE_URL;
 
-const {addJob,queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('shared');
+const {addJob} = require('../../../../shared/queue/queueProducer');
+const {queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('../../../../shared/queue/queue.config');
 
 //-------POST /api/files-worker/hash-----------
 async function checkHash(req,res) {
