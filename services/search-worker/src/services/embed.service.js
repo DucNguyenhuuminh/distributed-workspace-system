@@ -33,7 +33,7 @@ async function loadClipModel() {
     if (!clipExtractor) {
         console.log('[EmbedService] Loading CLIP model...');
         clipExtractor = await pipeline('zero-shot-image-classification', CLIP_MODEL, {
-            quantized = true;
+            quantized = true
         });
         console.log('[EmbedService] CLIP model loaded');
     }
