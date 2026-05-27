@@ -1,4 +1,15 @@
-const {pipeline, env} = require('@xenova/transformers');
+let pipeline;
+let env;
+let RawImage;
+
+const initTransformers = async() => {
+    if (!pipeline || !env || !RawImage) {
+        const transformers = await import('@xenova/transformers');
+        pipeline = transformers.pipeline;
+        env = transformers.env;
+        RawImage = transformers.RawImage;
+    }
+};
 
 const TEXT_MODEL = 'Xenova/all-MiniLM-L6-v2';
 const CLIP_MODEL = 'Xenova/clip-vit-base-patch32';
@@ -7,6 +18,7 @@ let textExtractor = null;
 let clipExtractor = null;
 
 async function loadTextModel() {
+    await initTransformers();
     if (!textExtractor) {
         console.log('[EmbedService] Loading model......');
         textExtractor = await pipeline('feature-extraction', TEXT_MODEL);
@@ -16,6 +28,7 @@ async function loadTextModel() {
 }
 
 async function loadClipModel() {
+    await initTransformers();
     if (!clipExtractor) {
         console.log('[EmbedService] Loading CLIP model...');
         clipExtractor = await pipeline('zero-shot-image-classification', CLIP_MODEL);
@@ -34,7 +47,7 @@ async function embed(text) {
 }
 
 async function embedImage(imageBuffer, mimeType) {
-    const {RawImage} = require ('@xenova/transformers');
+    await initTransformers();
     const model = await loadClipModel();
     const image = await RawImage.fromBlob(
         new Blob([imageBuffer], {type: mimeType})

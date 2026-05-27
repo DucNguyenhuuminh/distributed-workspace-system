@@ -1,13 +1,17 @@
 FROM node:18-alpine
-
 WORKDIR /app
 
-COPY services/storage-service/package*.json ./services/storage-service/
+COPY shared/package*.json ./shared/
+WORKDIR /app/shared
+RUN npm install
 
+WORKDIR /app
+COPY services/storage-service/package*.json ./services/storage-service/
 WORKDIR /app/services/storage-service
 RUN npm install
 
 WORKDIR /app
+COPY shared ./shared
 COPY services/storage-service ./services/storage-service
 
 WORKDIR /app/services/storage-service

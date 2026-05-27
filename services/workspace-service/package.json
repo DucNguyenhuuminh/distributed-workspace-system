@@ -11,6 +11,7 @@
     "test:integration": "jest tests/integration"
   },
   "dependencies": {
+    "joi": "^17.12.3",
     "axios": "^1.6.7",
     "bullmq": "^5.76.1",
     "dotenv": "^16.4.5",

@@ -8,7 +8,7 @@ const {getAllUsers,
     getSystemStats,
     banUser
 } = require('../controllers/admin.controller');
-const {authMiddleware, requireRole, requireRole} = require('shared');
+const {authMiddleware, requireRole} = require('shared/middlewares/auth.middleware');
 
 router.use(authMiddleware);
 router.use(requireRole);
