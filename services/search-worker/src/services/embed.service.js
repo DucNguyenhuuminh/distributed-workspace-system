@@ -13,10 +13,10 @@ const initTransformers = async() => {
 };
 
 const TEXT_MODEL = 'Xenova/all-MiniLM-L6-v2';
-const CLIP_MODEL = 'Xenova/clip-vit-base-patch32';
+// const CLIP_MODEL = 'Xenova/clip-vit-base-patch32';
 
 let textExtractor = null;
-let clipExtractor = null;
+// let clipExtractor = null;
 
 async function loadTextModel() {
     await initTransformers();
@@ -28,17 +28,17 @@ async function loadTextModel() {
     return textExtractor;
 }
 
-async function loadClipModel() {
-    await initTransformers();
-    if (!clipExtractor) {
-        console.log('[EmbedService] Loading CLIP model...');
-        clipExtractor = await pipeline('zero-shot-image-classification', CLIP_MODEL, {
-            quantized: true
-        });
-        console.log('[EmbedService] CLIP model loaded');
-    }
-    return clipExtractor;
-}
+// async function loadClipModel() {
+//     await initTransformers();
+//     if (!clipExtractor) {
+//         console.log('[EmbedService] Loading CLIP model...');
+//         clipExtractor = await pipeline('zero-shot-image-classification', CLIP_MODEL, {
+//             quantized: true
+//         });
+//         console.log('[EmbedService] CLIP model loaded');
+//     }
+//     return clipExtractor;
+// }
 
 async function embed(text) {
     const model = await loadTextModel();
@@ -49,16 +49,16 @@ async function embed(text) {
     return Array.from(output.data);
 }
 
-async function embedImage(imageBuffer, mimeType) {
-    await initTransformers();
-    const model = await loadClipModel();
-    const image = await RawImage.fromBlob(
-        new Blob([imageBuffer], {type: mimeType})
-    );
-    const output = await model.processor(image);
-    const features = await model.model.get_image_features(output);
-    return Array.from(features.data); 
-}
+// async function embedImage(imageBuffer, mimeType) {
+//     await initTransformers();
+//     const model = await loadClipModel();
+//     const image = await RawImage.fromBlob(
+//         new Blob([imageBuffer], {type: mimeType})
+//     );
+//     const output = await model.processor(image);
+//     const features = await model.model.get_image_features(output);
+//     return Array.from(features.data); 
+// }
 
 // async function embedBatch(texts) {
 //     const model = await loadModel();
@@ -71,13 +71,11 @@ async function embedImage(imageBuffer, mimeType) {
 
 async function loadModels() {
     await loadTextModel();
-    await loadClipModel();
+    // await loadClipModel();
 }
 
 module.exports = {
     embed, 
-    embedImage, 
     loadModels, 
-    TEXT_MODEL, 
-    CLIP_MODEL
+    TEXT_MODEL
 };

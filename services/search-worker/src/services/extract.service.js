@@ -25,7 +25,7 @@ const IMAGE_MIME_TYPES = [
 
 function getMimeCategory(mimeType) {
   if (TEXT_MIME_TYPES.includes(mimeType))  return 'text';
-  if (IMAGE_MIME_TYPES.includes(mimeType)) return 'image';
+//   if (IMAGE_MIME_TYPES.includes(mimeType)) return 'image';
   return null;
 }
 
@@ -69,26 +69,25 @@ async function extractText(buffer, mimeType) {
     }
 }
 
-async function extractMetadata(buffer, mimeType) {
-    try {
-        const response = await axios.put(`${TIKA_URL}/meta`, buffer, {
-            headers: {
-                'Content-Type': mimeType,
-                'Accept': 'application/json',
-            },
-            maxtBodyLength: Infinity,
-            timeout: 15000,
-        });
-        return response.data || {};
-    } catch(err) {
-        console.error(`[ExtractService] Tika metadata error:`, err.message);
-        return {};
-    }
-}
+// async function extractMetadata(buffer, mimeType) {
+//     try {
+//         const response = await axios.put(`${TIKA_URL}/meta`, buffer, {
+//             headers: {
+//                 'Content-Type': mimeType,
+//                 'Accept': 'application/json',
+//             },
+//             maxtBodyLength: Infinity,
+//             timeout: 15000,
+//         });
+//         return response.data || {};
+//     } catch(err) {
+//         console.error(`[ExtractService] Tika metadata error:`, err.message);
+//         return {};
+//     }
+// }
 
 module.exports = {
     isSupportedMime, 
     downloadFile, 
-    extractText,
-    extractMetadata
+    extractText
 };
