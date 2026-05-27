@@ -11,13 +11,14 @@ const minioClient =  new Minio.Client({
 const bucketName = process.env.MINIO_BUCKET;
 async function initMinio() {
     try {
-        const exists = await minioClient.bucketExists(bucketName);
-        if (!exists) {
-            await minioClient.makeBucket(bucketName);
-            console.log(`[storage-service] MinIO Bucket "${bucketName}" created`);
-        }else {
-            console.log(`[storage-service] MinIO Bucket "${bucketName} already exists"`);
-        }
+        // const exists = await minioClient.bucketExists(bucketName);
+        // if (!exists) {
+        //     await minioClient.makeBucket(bucketName);
+        //     console.log(`[storage-service] MinIO Bucket "${bucketName}" created`);
+        // }else {
+        //     console.log(`[storage-service] MinIO Bucket "${bucketName} already exists"`);
+        // }
+        continue;
     } catch(err) {
         console.error('[storage-service] MinIO init error:', err.message);
         throw err;

@@ -8,6 +8,7 @@ const initTransformers = async() => {
         pipeline = transformers.pipeline;
         env = transformers.env;
         RawImage = transformers.RawImage;
+        env.backends.onnx.wasm.numThreads = 1;
     }
 };
 
@@ -31,7 +32,9 @@ async function loadClipModel() {
     await initTransformers();
     if (!clipExtractor) {
         console.log('[EmbedService] Loading CLIP model...');
-        clipExtractor = await pipeline('zero-shot-image-classification', CLIP_MODEL);
+        clipExtractor = await pipeline('zero-shot-image-classification', CLIP_MODEL, {
+            quantized = true;
+        });
         console.log('[EmbedService] CLIP model loaded');
     }
     return clipExtractor;
