@@ -3,8 +3,11 @@ FROM node:18-alpine
 WORKDIR /app
 
 COPY shared/package*.json ./shared/
-COPY services/workspace-service/package*.json ./services/workspace-service/
+WORKDIR /app/shared
+RUN npm install
 
+WORKDIR /app
+COPY services/workspace-service/package*.json ./services/workspace-service/
 WORKDIR /app/services/workspace-service
 RUN npm install
 
