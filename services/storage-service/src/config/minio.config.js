@@ -18,11 +18,15 @@ async function initMinio() {
         // }else {
         //     console.log(`[storage-service] MinIO Bucket "${bucketName} already exists"`);
         // }
-        continue;
+        console.log(`[storage-service] MinIO initialized for bucket: ${bucketName}`)
     } catch(err) {
         console.error('[storage-service] MinIO init error:', err.message);
         throw err;
     }
 }
 
-module.exports = {minioClient, bucketName, initMinio};
+module.exports = {
+    minioClient, 
+    bucketName, 
+    initMinio
+};
