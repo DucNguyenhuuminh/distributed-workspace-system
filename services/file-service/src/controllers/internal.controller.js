@@ -1,6 +1,6 @@
 const axios = require('axios');
-const {addJob} = require('../../../../shared/queue/queueProducer');
-const {queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('../../../../shared/queue/queue.config');
+const {addJob} = require('shared/queue/queueProducer');
+const {queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('shared/queue/queue.config');
 const Document = require('../models/documents.model');
 const PhysicalFile = require('../models/physical-file.model');
 

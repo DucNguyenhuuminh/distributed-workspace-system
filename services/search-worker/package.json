@@ -17,7 +17,7 @@
     "ioredis": "^5.10.1",
     "mongoose": "^8.3.1",
     "opossum": "^9.0.0",
-    "shared": "*"
+    "shared": "file:../../shared"
   },
   "devDependencies": {
     "@bull-board/api": "^7.0.0",

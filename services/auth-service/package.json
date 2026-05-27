@@ -19,7 +19,7 @@
     "ioredis": "^5.10.1",
     "joi": "^17.12.3",
     "jsonwebtoken": "^9.0.2",
-    "shared": "*"
+    "shared": "file:../../shared"
   },
   "devDependencies": {
     "jest": "^30.3.0",

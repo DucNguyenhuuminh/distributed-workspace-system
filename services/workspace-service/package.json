@@ -19,7 +19,7 @@
     "mongoose": "^8.3.1",
     "node-cron": "^4.2.1",
     "opossum": "^9.0.0",
-    "shared": "*"
+    "shared": "file:../../shared"
   },
   "devDependencies": {
     "ioredis-mock": "^8.13.1",

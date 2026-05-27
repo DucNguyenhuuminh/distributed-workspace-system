@@ -1,8 +1,8 @@
 const router = require('express').Router();
 const {getFiles, getFileById, renameFile, deleteFile, restoreFile,
     getFileLink, moveFile, getTrashedFiles, emptyTrash, forceDeleteFile} = require('../controllers/file.controller');
-const {verifyToken} = require('../../../../shared/middlewares/auth.middleware')
-const {validateRequest} = require('../../../../shared/middlewares/validate.middleware');
+const {verifyToken} = require('shared/middlewares/auth.middleware')
+const {validateRequest} = require('shared/middlewares/validate.middleware');
 const {
     fileIdParamValidator,
     getFilesValidator,

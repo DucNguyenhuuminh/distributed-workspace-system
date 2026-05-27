@@ -4,8 +4,8 @@ const PhysicalFile = require('../models/physical-file.model');
 const WORKSPACE_SERVICE_URL = process.env.WORKSPACE_SERVICE_URL;
 const STORAGE_SERVICE_URL = process.env.STORAGE_SERVICE_URL;
 
-const {addJob} = require('../../../../shared/queue/queueProducer');
-const {queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('../../../../shared/queue/queue.config');
+const {addJob} = require('shared/queue/queueProducer');
+const {queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('shared/queue/queue.config');
 
 //-------POST /api/files-worker/hash-----------
 async function checkHash(req,res) {

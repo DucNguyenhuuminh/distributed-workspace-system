@@ -3,7 +3,7 @@ const {
     createWorkspace,getWorkspaces,getWorkspaceById,
     addMember,removeMember,deleteWorkspace, setUserPermission} = require('../controllers/workspace.controller');
 const {create_workspace_valid, add_member_valid, validate} = require('../validators/workspace.validator');
-const {authMiddleware} = require('../../../../shared/middlewares/auth.middleware');
+const {authMiddleware} = require('shared/middlewares/auth.middleware');
 
 router.use(authMiddleware);
 

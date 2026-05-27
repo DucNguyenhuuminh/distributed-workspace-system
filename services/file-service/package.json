@@ -22,7 +22,7 @@
     "multer": "^1.4.5-lts.1",
     "node-cron": "^4.2.1",
     "opossum": "^9.0.0",
-    "shared": "*"
+    "shared": "file:../../shared"
   },
   "devDependencies": {
     "jest": "^30.3.0",

@@ -13,8 +13,8 @@ const {
   accessShareLinkValidator,
   verifyPasswordValidator,
 } = require('../validators/share.validator');
-const {authMiddleware} = require('../../../../shared/middlewares/auth.middleware')
-const {validateRequest} = require('../../../../shared/middlewares/validate.middleware');
+const {authMiddleware} = require('shared/middlewares/auth.middleware')
+const {validateRequest} = require('shared/middlewares/validate.middleware');
 
 router.use(authMiddleware);
 router.get('/share/:token',         getSharedFile);
