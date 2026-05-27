@@ -24,7 +24,7 @@ app.use((_,res) => res.status(404).json({message: "Route not exists"}));
 
 initMinio().then(() => {
     console.log('[storage-service] MinIO connected');
-    app.listen(process.env.PORT || 3005, () => console.log(`[storage-service] Running on port ${process.env.PORT}`));
+    app.listen(process.env.PORT || 3005, '0.0.0.0', () => console.log(`[storage-service] Running on port ${process.env.PORT}`));
 }).catch((err) => {
     console.error('[storage-service] Failed to start:', err.message);
     process.exit(1);
