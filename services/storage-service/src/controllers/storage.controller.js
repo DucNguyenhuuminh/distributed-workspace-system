@@ -77,7 +77,7 @@ async function completeMultipartUpload(req,res) {
 
         const command = new CompleteMultipartUploadCommand({
             Bucket: bucketName,
-            Key: objectNamem,
+            Key: objectName,
             UploadId: uploadId,
             MultipartUpload: {Parts: sortedEtags}
         });
