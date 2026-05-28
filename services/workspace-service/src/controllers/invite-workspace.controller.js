@@ -173,17 +173,23 @@ async function joinWorkspace(req,res) {
         });
 
         try {
-            await addJob(
-                queueForEvent(EVENTS.MEMBER_ADDED),
-                EVENTS.MEMBER_ADDED,
-                {
-                    workspaceId,
-                    targetUserId: userId,
-                    workspaceName: workspace.name,
-                    actorId: invite.createdBy.toString(),
-                },
-                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_ADDED, `${workspaceId}_${userId}`)}
-            );
+            const admin = workspace.members.find(m => m.role === 'ADMIN');
+            if (admin) {
+                await addJob(
+                    queueForEvent(EVENTS.NOTIFY_USER),
+                    EVENTS.NOTIFY_USER,
+                    {
+                        userId: admin.userId.toString(),       
+                        actorId: userId,
+                        type: 'JOIN REQUEST',
+                        title: 'Request to join workspace',
+                        message:   `${userInfo.username || userInfo.email} wants to join workspace "${workspace.name}"`,
+                        actionUrl: `/workspaces/${workspaceId}/requests`,
+                        metadata:  { requestId: joinRequest._id, workspaceId, userId },
+                    },
+                    {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_ADDED, `${workspaceId}_${userId}`)}
+                );
+            }
         } catch(jobErr) {
             console.error('[Queue Error] MEMBER_ADDED:', jobErr.message);
         }
@@ -289,7 +295,7 @@ async function reviewJoinRequest(req,res) {
                 EVENTS.NOTIFY_USER,
                 {
                     userId:    request.userId.toString(),
-                    type:      'GENERAL',
+                    type:      'JOIN_REJECTED',
                     title:     'You request have been denied',
                     message:   `Your request joining workspace "${workspace.name}" has been denied`,
                     actionUrl: null,
@@ -303,7 +309,7 @@ async function reviewJoinRequest(req,res) {
         }
 
         return res.json({
-            message: `Request ${action}d successfully`,
+            message: `Request ${action} successfully`,
             data: {status: request.status},
         });
     } catch(err) {

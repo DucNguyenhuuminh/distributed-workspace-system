@@ -1,9 +1,9 @@
 const QUEUES ={
     FILE: 'file-queue',
-    FOLDER: 'folder-queue',
+    // FOLDER: 'folder-queue',
     WORKSPACE: 'workspace-queue',
     NOTIFICATION: 'notification-queue',
-    SEARCH: 'search-queue',
+    // SEARCH: 'search-queue',
     GENERAL: 'general-queue'
 };
 
@@ -14,11 +14,11 @@ const EVENTS = {
     FILE_RESTORED: 'file.restored',
     FILE_MOVED: 'file.moved',
 
-    FOLDER_CREATED: 'folder.created',
-    FOLDER_RENAMED: 'folder.renamed',
-    FOLDER_TRASHED: 'folder.trashed',
-    FOLDER_RESTORED: 'folder.restored',
-    FOLDER_MOVED: 'folder.moved',
+    // FOLDER_CREATED: 'folder.created',
+    // FOLDER_RENAMED: 'folder.renamed',
+    // FOLDER_TRASHED: 'folder.trashed',
+    // FOLDER_RESTORED: 'folder.restored',
+    // FOLDER_MOVED: 'folder.moved',
 
     WORKSPACE_CREATED: 'workspace.created',
     WORKSPACE_DELETED: 'workspace.deleted',
@@ -38,11 +38,11 @@ const EVENT_QUEUE_MAP = {
     [EVENTS.FILE_RESTORED]: QUEUES.FILE,
     [EVENTS.FILE_MOVED]: QUEUES.FILE,
 
-    [EVENTS.FOLDER_CREATED]: QUEUES.FOLDER,
-    [EVENTS.FOLDER_RENAMED]: QUEUES.FOLDER,
-    [EVENTS.FOLDER_TRASHED]: QUEUES.FOLDER,
-    [EVENTS.FOLDER_RESTORED]: QUEUES.FOLDER,
-    [EVENTS.FOLDER_MOVED]: QUEUES.FOLDER,
+    // [EVENTS.FOLDER_CREATED]: QUEUES.FOLDER,
+    // [EVENTS.FOLDER_RENAMED]: QUEUES.FOLDER,
+    // [EVENTS.FOLDER_TRASHED]: QUEUES.FOLDER,
+    // [EVENTS.FOLDER_RESTORED]: QUEUES.FOLDER,
+    // [EVENTS.FOLDER_MOVED]: QUEUES.FOLDER,
 
     [EVENTS.WORKSPACE_CREATED]: QUEUES.WORKSPACE,
     [EVENTS.WORKSPACE_DELETED]: QUEUES.WORKSPACE,

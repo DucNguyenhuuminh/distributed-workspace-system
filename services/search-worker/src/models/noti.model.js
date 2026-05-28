@@ -1,20 +1,17 @@
 const mongoose = require('mongoose');
 const {EVENTS} = require('shared');
 const eventValues = [
-  // File
   'FILE_MERGED',
   'FILE_RESTORED',
-  // Workspace
+  
   'WORKSPACE_CREATED',
   'WORKSPACE_DELETED',
   'MEMBER_ADDED',
   'MEMBER_REMOVED',
   'MEMBER_PERMISSION',
-  // Folder
-  'FOLDER_RESTORED',
-  // User
+  
   'USER_REGISTERED',
-  // General
+  'PASSWORD_RESET',
   'GENERAL',
 ];
 

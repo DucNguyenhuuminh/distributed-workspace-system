@@ -73,14 +73,13 @@ async function completeMultipartUpload(req,res) {
         const sortedEtags = listRes.Parts.map((p) => {
             let etagVal = p.ETag || p.etag;
 
-            // Đảm bảo ETag luôn được bọc trong dấu ngoặc kép
             if (typeof etagVal === 'string' && !etagVal.startsWith('"')) {
                 etagVal = `"${etagVal}"`;
             }
 
             return {
-                PartNumber: Number(p.PartNumber), // Bắt buộc viết hoa P, N
-                ETag: String(etagVal)             // BẮT BUỘC VIẾT HOA E VÀ T
+                PartNumber: Number(p.PartNumber), 
+                ETag: String(etagVal)             
             };
         }).sort((a, b) => a.PartNumber - b.PartNumber);
 

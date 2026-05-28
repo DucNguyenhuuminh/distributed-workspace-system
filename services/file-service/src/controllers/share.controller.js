@@ -1,6 +1,7 @@
 const axios = require('axios');
 const Document = require('../models/documents.model');
 const ShareLink = require('../models/share.model');
+const { addJob, queueForEvent, EVENTS, DEFAULT_JOB_OPTIONS, jobIdFor } = require('shared');
 
 async function validateShareLink(token) {
     console.log(`[ShareController] Validating token: ${token}`);
@@ -210,11 +211,27 @@ async function accessSharedFile(req,res) {
             }}
         );
 
-        if (shareLink.settings.notifyOnAccess) {
-            console.log(`[ShareController] (Mock) Notification triggered for file access on token ${token}`);
-        } else {
-            console.log(`[ShareController] User ${userId} successfully accessed ${token} with action: ${action}`);
+        if (shareLink.settings?.notifyOnAccess) {
+            try {
+                await addJob(
+                    queueForEvent(EVENTS.NOTIFY_USER),
+                    EVENTS.NOTIFY_USER,
+                    {
+                        userId: shareLink.createdBy.toString(),
+                        actorId: userId,
+                        type: 'SHARE_ACCESSED',
+                        title: 'Your file has been accessed',
+                        messsage: `Your file has been ${action === 'download' ? 'download': 'view'} through "${shareLink.fileName}" share link`,
+                        actionUrl: `/files/${shareLink.fileId}`,
+                        metadata: {fileId: shareLink.fileId, action, token}
+                    },
+                    {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.NOTIFY_USER, `access_${token}_${userId}_${Date.now()}`)}
+                );
+            } catch(jobErr) {
+                console.error('[Queue Error] notifyOnAccess:', jobErr.message);
+            }
         }
+        console.log(`[ShareController] User ${userId} accessed ${token} with action: ${action}`);
 
         return res.json({
             message: 'Access link successfully',
@@ -294,6 +311,25 @@ async function saveShareFile(req,res) {
             physicalFileId: originalDoc.physicalFileId._id,
             uploadedBy: userId
         });
+
+        try {
+            await addJob(
+                queueForEvent(EVENTS.NOTIFY_USER),
+                EVENTS.NOTIFY_USER,
+                {
+                userId:    shareLink.createdBy.toString(),
+                actorId:   userId,
+                type:      'SHARE_SAVED',
+                title:     'Your file has been saved',
+                message:   `Your file "${shareLink.fileName}" has been saved`,
+                actionUrl: `/files/${shareLink.fileId}`,
+                metadata:  { fileId: shareLink.fileId, savedBy: userId },
+                },
+                {...DEFAULT_JOB_OPTIONS,jobId: jobIdFor(EVENTS.NOTIFY_USER, `save_${token}_${userId}`)}
+            );
+        } catch(jobErr) {
+        console.error('[Queue Error] notify save file:', jobErr.message);
+        }
 
         console.log(`[ShareController] Successfully saved shared file to user's space. New DocID: ${newDocument._id}`);
         return res.status(201).json({

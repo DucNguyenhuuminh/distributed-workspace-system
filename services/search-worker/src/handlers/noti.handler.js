@@ -17,6 +17,21 @@ const notiHandlers = {
     });
   },
 
+  [EVENTS.FILE_RESTORED]: async (job) => {
+    const { uploadedBy, originalName, fileId } = job.data;
+    if (!uploadedBy) return;
+
+    await notificationService.createNotification({
+      userId:    uploadedBy,
+      actorId:   null,
+      type:      'FILE_RESTORED',
+      title:     'File đã được khôi phục',
+      message:   `File "${originalName || 'của bạn'}" đã được khôi phục thành công`,
+      actionUrl: `/files/${fileId}`,
+      metadata:  { originalName, fileId },
+    });
+  },
+
   // ── Workspace events ──────────────────────────────────
   [EVENTS.WORKSPACE_CREATED]: async (job) => {
     const { workspaceId, createdBy, name } = job.data;
@@ -51,6 +66,8 @@ const notiHandlers = {
 
   [EVENTS.MEMBER_ADDED]: async (job) => {
     const { workspaceId, targetUserId, workspaceName, actorId } = job.data;
+    if (!targetUserId)  return;
+    
     await notificationService.createNotification({
       userId:    targetUserId,
       actorId:   actorId || null,
