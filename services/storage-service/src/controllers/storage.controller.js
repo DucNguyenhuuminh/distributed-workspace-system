@@ -29,7 +29,7 @@ async function initMultipartUpload(req,res) {
         const uploadId = uploadRes.UploadId;
 
         const presignedURLs = await Promise.all(
-            Array.from({length: totalChunks}, (_,i) => {
+            Array.from({length: totalChunks},async (_,i) => {
                 const partNumber = i+1;
                 const partCommand = new UploadPartCommand({
                     Bucket: bucketName,
