@@ -11,12 +11,7 @@ const init_multipart_valid = [body('filename').notEmpty().withMessage("Filename 
 const complete_multipart_valid = [body('uploadId').notEmpty().withMessage('Upload ID is required')
                                                     .isString().withMessage('Upload ID must be a string'),
                                     body('objectName').notEmpty().withMessage('Object name is required')
-                                                    .isString().withMessage('Object name must be a string'),
-                                    body('etags').isArray({ min: 1 }).withMessage('ETags must be a non-empty array'),
-                                    body('etags.*.partNumber').notEmpty().withMessage('Part number is required for each etag')
-                                                            .isInt({ min: 1 }).withMessage('Part number must be an integer >= 1'),
-                                    body('etags.*.etag').notEmpty().withMessage('ETag string is required')
-                                                        .isString().withMessage('ETag must be a string')
+                                                    .isString().withMessage('Object name must be a string')
 ];
 
 const get_downloadURL_valid= [query('objectName').notEmpty().withMessage('Object name is required')
