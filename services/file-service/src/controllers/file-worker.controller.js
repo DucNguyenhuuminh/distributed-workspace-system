@@ -24,7 +24,7 @@ async function checkHash(req,res) {
             
             if (workspaceId) {
                 try {
-                    const response = await axios.get(`${WORKSPACE_SERVICE_URL}/workspaces/${workspaceId}`,
+                    const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${workspaceId}`,
                         {headers: {Authorization: req.headers.authorization}}
                     );
                     const workspace = response.data.data;
@@ -77,7 +77,7 @@ async function initUpload(req,res) {
 
         if (workspaceId) {
             try {
-                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/workspaces/${workspaceId}`,
+                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}}
                 );
                 const workspace = response.data.data;
@@ -103,7 +103,7 @@ async function initUpload(req,res) {
         let storageData;
         try {
             console.log(`[FileWorkerController] Calling Storage Service to initialize multipart upload`);
-            const response = await axios.post(`${STORAGE_SERVICE_URL}/storage/multipart/init`,{filename, mimeType, totalChunks});
+            const response = await axios.post(`${STORAGE_SERVICE_URL}/api/storage/multipart/init`,{filename, mimeType, totalChunks});
             storageData = response.data.data;
         } catch(err) {
             console.error('[FileWorkerController] Storage service error during init:', err.response?.data || err.message);
@@ -117,7 +117,6 @@ async function initUpload(req,res) {
                 uploadId:     storageData.uploadId,
                 originalName: filename,
                 objectName: storageData.objectName,
-                minioObjectPath: storageData.minioObjectPath,
                 presignedUrls: storageData.presignedURLs,
                 meta: {filename, mimeType, sizeBytes, workspaceId, folderId },
             },
@@ -137,7 +136,7 @@ async function mergeUpload(req,res) {
             
         try {
             console.log(`[FileWorkerController] Calling Storage Service to merge chunks`);
-            await axios.post(`${STORAGE_SERVICE_URL}/storage/multipart/complete`, {uploadId, objectName, etags});
+            await axios.post(`${STORAGE_SERVICE_URL}/api/storage/multipart/complete`, {uploadId, objectName, etags});
         } catch(err) {
             console.error("[FileWorkerController] Error while call storage-service to merge file", err.message);
             return res.status(500).json({message: "Failed to merge chunks in storage-service"});
