@@ -70,23 +70,19 @@ async function completeMultipartUpload(req,res) {
             return res.status(400).json({messsage: "No uploaded chunks found on S3"});
         }
 
-        const sortedEtags = listRes.Parts.map((p,index) => {
-            let etagVal = p.ETag || p.etag || p.eTag;
-            let partNum = p.PartNumber || p.partNumber;
+        const sortedEtags = listRes.Parts.map((p) => {
+            let etagVal = p.ETag || p.etag;
 
-            if (!etagVal) {
-                console.error(`[DEBUG] Number chunk ${partNum || index} is mising ETag! Raw data:`, p);
-                throw new Error(`Supabase not return ETag for chunk numeber ${partNum || index}`);
-            }
-
+            // Đảm bảo ETag luôn được bọc trong dấu ngoặc kép
             if (typeof etagVal === 'string' && !etagVal.startsWith('"')) {
                 etagVal = `"${etagVal}"`;
             }
+
             return {
-                PartNumber: p.PartNumber,
-                Etag: p.ETag
-            }
-        });
+                PartNumber: Number(p.PartNumber), // Bắt buộc viết hoa P, N
+                ETag: String(etagVal)             // BẮT BUỘC VIẾT HOA E VÀ T
+            };
+        }).sort((a, b) => a.PartNumber - b.PartNumber);
 
         const command = new CompleteMultipartUploadCommand({
             Bucket: bucketName,
