@@ -49,15 +49,6 @@ const mergeUploadValidator = [
         .notEmpty().withMessage('Object name is required')
         .isString().withMessage('Object name must be a string'),
 
-    body('etags')
-        .isArray({ min: 1 }).withMessage('ETags must be a non-empty array'),
-    body('etags.*.partNumber')
-        .notEmpty().withMessage('Part number is required for each etag')
-        .isInt({ min: 1 }).withMessage('Part number must be an integer >= 1'),
-    body('etags.*.etag')
-        .notEmpty().withMessage('ETag string is required')
-        .isString().withMessage('ETag must be a string'),
-
     body('hashString')
         .notEmpty().withMessage('Hash string is required')
         .isString().withMessage('Hash string must be a string'),
