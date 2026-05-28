@@ -65,15 +65,28 @@ async function completeMultipartUpload(req,res) {
         });
 
         const listRes = await s3Client.send(listCommand);
-
+        console.log("[DEBUG] Supabase ListParts Result:", JSON.stringify(listRes.Parts, null, 2));
         if (!listRes.Parts || listRes.Parts.length === 0) {
             return res.status(400).json({messsage: "No uploaded chunks found on S3"});
         }
 
-        const sortedEtags = listRes.Parts.map(p => ({
-            PartNumber: p.PartNumber,
-            Etag: p.ETag
-        }));
+        const sortedEtags = listRes.Parts.map((p,index) => {
+            let etagVal = p.ETag || p.etag || p.eTag;
+            let partNum = p.PartNumber || p.partNumber;
+
+            if (!etagVal) {
+                console.error(`[DEBUG] Number chunk ${partNum || index} is mising ETag! Raw data:`, p);
+                throw new Error(`Supabase not return ETag for chunk numeber ${partNum || index}`);
+            }
+
+            if (typeof etagVal === 'string' && !etagVal.startsWith('"')) {
+                etagVal = `"${etagVal}"`;
+            }
+            return {
+                PartNumber: p.PartNumber,
+                Etag: p.ETag
+            }
+        });
 
         const command = new CompleteMultipartUploadCommand({
             Bucket: bucketName,
