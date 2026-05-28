@@ -2,6 +2,7 @@ const {s3Client, bucketName} = require('../config/minio.config');
 const {
     CreateMultipartUploadCommand,
     CompleteMultipartUploadCommand,
+    ListPartsCommand,
     UploadPartCommand,
     GetObjectCommand,
     DeleteObjectCommand
@@ -55,11 +56,23 @@ async function initMultipartUpload(req,res) {
 //-------POST /api/storage/multipart/complete-----------
 async function completeMultipartUpload(req,res) {
     try {
-        const {uploadId, objectName, etags} = req.body;
-        const sortedEtags = [...etags].map(e => ({
-            PartNumber: e.partNumber,
-            ETag: e.etag
-        })).sort((a,b) => a.PartNumber - b.PartNumber);
+        const {uploadId, objectName} = req.body;
+        const listCommand = new ListPartsCommand({
+            Bucket: bucketName,
+            Key: objectName,
+            UploadId: uploadId
+        });
+
+        const listRes = await s3Client.send(listCommand);
+
+        if (!listRes.Parts || listRes.Parts.length === 0) {
+            return res.status(400).json({messsage: "No uploaded chunks found on S3"});
+        }
+
+        const sortedEtags = listRes.Parts.map(p => ({
+            PartNumber: p.PartNumber,
+            Etag: p.ETag
+        }));
 
         const command = new CompleteMultipartUploadCommand({
             Bucket: bucketName,

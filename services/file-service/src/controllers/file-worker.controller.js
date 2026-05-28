@@ -136,7 +136,7 @@ async function mergeUpload(req,res) {
             
         try {
             console.log(`[FileWorkerController] Calling Storage Service to merge chunks`);
-            await axios.post(`${STORAGE_SERVICE_URL}/api/storage/multipart/complete`, {uploadId, objectName, etags});
+            await axios.post(`${STORAGE_SERVICE_URL}/api/storage/multipart/complete`, {uploadId, objectName});
         } catch(err) {
             console.error("[FileWorkerController] Error while call storage-service to merge file", err.message);
             return res.status(500).json({message: "Failed to merge chunks in storage-service"});
