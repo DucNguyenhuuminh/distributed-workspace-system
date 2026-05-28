@@ -57,6 +57,7 @@ async function initMultipartUpload(req,res) {
 async function completeMultipartUpload(req,res) {
     try {
         const {uploadId, objectName} = req.body;
+        console.log(`[StorageController] Fetching ETags from S3 for UploadId: ${uploadId}`);
         const listCommand = new ListPartsCommand({
             Bucket: bucketName,
             Key: objectName,
