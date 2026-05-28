@@ -33,7 +33,7 @@ app.get('/health', (_, res) =>
 );
 
 app.use((_, res) =>
-  res.status(404).json({ message: 'Route không tồn tại' })
+  res.status(404).json({ message: 'Route not exists' })
 );
 
 async function start() {
