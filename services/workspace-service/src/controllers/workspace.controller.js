@@ -199,7 +199,8 @@ async function deleteWorkspace(req,res) {
                 { 
                     workspaceId: workspace._id.toString(), 
                     name: workspace.name,  
-                    memberIds: workspace.members.map(m => m.userId.toString()),
+                    memberIds: workspace.members.filter(m => m.userId.toString() !== adminId)
+                                                .map(m => m.userId.toString()),
                     actorId: adminId,
                 },
                 { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.WORKSPACE_DELETED, workspace._id.toString()) }
