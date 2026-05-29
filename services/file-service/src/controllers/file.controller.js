@@ -188,17 +188,17 @@ async function deleteFile(req,res) {
         );
         console.log(`[FileController] Successfully soft-deleted file: ${fileId}`);
 
-        try {
-            await addJob(
-                queueForEvent(EVENTS.FILE_TRASHED),
-                EVENTS.FILE_TRASHED,
-                {fileId, actorId: userId, fileName: file.originalName, workspaceId: file.workspaceId},
-                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_TRASHED,fileId)}
-            );
-            console.log(`[FileController] Enqueued FILE_TRASHED job for file: ${fileId}`);
-        } catch(jobErr) {
-            console.error('[Queue Error] Failed to enqueue FILE_TRASHED job', jobErr.message);
-        }
+        // try {
+        //     await addJob(
+        //         queueForEvent(EVENTS.FILE_TRASHED),
+        //         EVENTS.FILE_TRASHED,
+        //         {fileId, actorId: userId, fileName: file.originalName, workspaceId: file.workspaceId},
+        //         {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_TRASHED,fileId)}
+        //     );
+        //     console.log(`[FileController] Enqueued FILE_TRASHED job for file: ${fileId}`);
+        // } catch(jobErr) {
+        //     console.error('[Queue Error] Failed to enqueue FILE_TRASHED job', jobErr.message);
+        // }
 
         return res.json({message: "File deleted successfully", data: {file}});
     } catch(err) {
@@ -274,12 +274,10 @@ async function restoreFile(req,res) {
                 queueForEvent(EVENTS.FILE_RESTORED),
                 EVENTS.FILE_RESTORED,
                 {
-                    fileId, 
-                    minioObjectPath: physicalFile.minioObjectPath,
-                    mimeType: physicalFile.mimeType,
+                    fileId: file._id.toString(),
+                    uploadedBy: userId,
                     originalName: file.originalName,
-                    workspaceId: file.workspaceId,
-                    uploadedBy: userId
+                    workspaceId: file.workspaceId || null,
                 },
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_RESTORED, fileId)}
             );

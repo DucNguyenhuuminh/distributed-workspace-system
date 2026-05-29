@@ -12,14 +12,13 @@ const notiHandlers = {
       type:      'FILE_MERGED',
       title:     'Upload thành công',
       message:   `File "${originalName}" đã được tải lên thành công`,
-      actionUrl: workspaceId ? `/workspaces/${workspaceId}` : '/my-drive',
+      actionUrl: workspaceId ? `/workspaces/${workspaceId}` : '/',
       metadata:  { originalName, workspaceId },
     });
   },
 
   [EVENTS.FILE_RESTORED]: async (job) => {
-    const { uploadedBy, originalName, fileId } = job.data;
-    if (!uploadedBy) return;
+    const { fileId, uploadedBy, originalName, workspaceId } = job.data;
 
     await notificationService.createNotification({
       userId:    uploadedBy,
@@ -27,8 +26,8 @@ const notiHandlers = {
       type:      'FILE_RESTORED',
       title:     'File đã được khôi phục',
       message:   `File "${originalName || 'của bạn'}" đã được khôi phục thành công`,
-      actionUrl: `/files/${fileId}`,
-      metadata:  { originalName, fileId },
+      actionUrl: workspaceId ? `/workspaces/${workspaceId}` : '/',
+      metadata:  { originalName, fileId, workspaceId },
     });
   },
 
@@ -40,9 +39,9 @@ const notiHandlers = {
       actorId:   null,
       type:      'WORKSPACE_CREATED',
       title:     'Workspace đã được tạo',
-      message:   `Workspace "${name || workspaceId}" đã được tạo thành công`,
+      message:   `Workspace "${name}" đã được tạo thành công`,
       actionUrl: `/workspaces/${workspaceId}`,
-      metadata:  { workspaceId },
+      metadata:  { workspaceId, name },
     });
   },
 
@@ -56,9 +55,8 @@ const notiHandlers = {
       type:      'WORKSPACE_DELETED',
       title:     'Workspace đã bị xóa',
       message:   `Workspace "${name}" đã bị giải tán`,
-      actionUrl: null,
-      metadata:  { workspaceId },
-      isRead:    false,
+      actionUrl: `/workspaces/${workspaceId}`,
+      metadata:  { workspaceId, name },
     }));
 
     await notificationService.createBulkNotifications(notifications);
@@ -75,7 +73,7 @@ const notiHandlers = {
       title:     'Bạn được mời vào workspace',
       message:   `Bạn đã được thêm vào workspace "${workspaceName || workspaceId}"`,
       actionUrl: `/workspaces/${workspaceId}`,
-      metadata:  { workspaceId },
+      metadata:  { workspaceId, workspaceName },
     });
   },
 
@@ -87,7 +85,8 @@ const notiHandlers = {
       type:     'MEMBER_REMOVED',
       title:    'Bạn đã bị xóa khỏi workspace',
       message:  `Bạn đã bị xóa khỏi workspace "${workspaceName || workspaceId}"`,
-      metadata: { workspaceId },
+      actionUrl: '/workspaces',
+      metadata: { workspaceId, workspaceName },
     });
   },
 
@@ -100,7 +99,7 @@ const notiHandlers = {
       title:     'Quyền của bạn đã thay đổi',
       message:   `Quyền của bạn trong workspace "${workspaceName || workspaceId}" đã được đổi thành "${newPermissions}"`,
       actionUrl: `/workspaces/${workspaceId}`,
-      metadata:  { workspaceId, newPermissions },
+      metadata:  { workspaceId, workspaceName, newPermissions },
     });
   },
 

@@ -33,7 +33,7 @@ async function createWorkspace(req,res) {
                 {
                     workspaceId: workspace._id.toString(), 
                     createdBy: userId, 
-                    workspace: workspace.toObject()
+                    name: workspace.name,
                 },
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.WORKSPACE_CREATED, workspace._id.toString())}
             );
@@ -198,9 +198,9 @@ async function deleteWorkspace(req,res) {
                 EVENTS.WORKSPACE_DELETED,
                 { 
                     workspaceId: workspace._id.toString(), 
-                    name: workspace.name, 
-                    actorId: adminId, 
-                    memberIds: workspace.members.map(m => m.userId.toString()) 
+                    name: workspace.name,  
+                    memberIds: workspace.members.map(m => m.userId.toString()),
+                    actorId: adminId,
                 },
                 { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.WORKSPACE_DELETED, workspace._id.toString()) }
             );
@@ -264,8 +264,7 @@ async function removeMember(req,res) {
                 { 
                     workspaceId: workspace._id.toString(), 
                     targetUserId, 
-                    removedBy: currentUserId, 
-                    actorId: currentUserId, 
+                    removedBy: currentUserId,
                     workspaceName: workspace.name 
                 },
                 { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_REMOVED, `${workspace._id.toString()}-${targetUserId}`) }

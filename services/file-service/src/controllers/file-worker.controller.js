@@ -167,17 +167,9 @@ async function mergeUpload(req,res) {
                 queueForEvent(EVENTS.FILE_MERGED),
                 EVENTS.FILE_MERGED,
                 {
-                    fileId: file._id.toString(),  
-                    minioObjectPath, 
-                    originalName: file.originalName, 
-                    totalChunks,
-                    mimeType,
-                    sizeBytes,      
-                    hashString,     
-                    workspaceId, 
-                    folderId, 
                     uploadedBy: userId,
-                    actorId: userId,
+                    originalName: file.originalName,
+                    workspaceId: workspaceId || null,
                     isDuplicate: false
                 },
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_MERGED, file._id.toString())}
