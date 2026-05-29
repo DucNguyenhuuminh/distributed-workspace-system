@@ -9,6 +9,19 @@ const {
 } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
+//==========HELPER===========
+const sanitizeFilename = (str) => {
+    if (!str) return "unnamed_file";
+    return str
+        .normalize("NFD") 
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d").replace(/Đ/g, "D") 
+        .replace(/[^a-zA-Z0-9.\-_]/g, "_")
+        .replace(/_+/g, "_");
+};
+//=============================
+
+//==========CONTROLLER===========
 //-------POST /api/storage/multipart/init-----------
 async function initMultipartUpload(req,res) {
     try {
@@ -19,7 +32,8 @@ async function initMultipartUpload(req,res) {
             return res.status(400).json({message: "Lack of chunks"});
         }
 
-        const objectName = `file/${Date.now()}_${filename}`;
+        const safeFilename = sanitizeFilename(filename);
+        const objectName = `file/${Date.now()}_${safeFilename}`;
         
         const command = new CreateMultipartUploadCommand({
             Bucket: bucketName,
