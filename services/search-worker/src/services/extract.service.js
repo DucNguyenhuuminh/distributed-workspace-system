@@ -89,5 +89,6 @@ async function extractText(buffer, mimeType) {
 module.exports = {
     isSupportedMime, 
     downloadFile, 
-    extractText
+    extractText,
+    getMimeCategory,
 };

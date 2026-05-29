@@ -27,14 +27,16 @@ async function indexDocument({fileId, objectName, mimeType, originalName, worksp
         console.log(`[FileHandler] Skip — no text: ${fileId}`);
         return;
       }
-      const meta = await extractService.extractMetadata(buffer, mimeType);
+      // const meta = await extractService.extractMetadata(buffer, mimeType);
+      const meta = {};
       const enrichedText = buildEnrichedText(text, meta);
       embedding    = await embedService.embed(enrichedText.slice(0, 512));
       documentText = enrichedText.slice(0, 5000);
-    } else if (category === 'image') {
-      embedding    = await embedService.embedImage(buffer, mimeType);
-      documentText = `[Image] ${originalName || 'image file'}`;
     }
+    // } else if (category === 'image') {
+    //   embedding    = await embedService.embedImage(buffer, mimeType);
+    //   documentText = `[Image] ${originalName || 'image file'}`;
+    // }
 
     await chromaService.upsert({
     id:        fileId,
