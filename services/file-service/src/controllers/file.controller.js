@@ -274,10 +274,12 @@ async function restoreFile(req,res) {
                 queueForEvent(EVENTS.FILE_RESTORED),
                 EVENTS.FILE_RESTORED,
                 {
-                    fileId: file._id.toString(),
-                    uploadedBy: userId,
-                    originalName: file.originalName,
-                    workspaceId: file.workspaceId || null,
+                    fileId: document._id.toString(),
+                    objectName: document.physicalFileId.minioObjectPath, 
+                    mimeType: document.physicalFileId.mimeType,
+                    originalName: document.originalName,
+                    workspaceId: document.workspaceId || null,
+                    uploadedBy: req.user.userId
                 },
                 {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_RESTORED, fileId)}
             );

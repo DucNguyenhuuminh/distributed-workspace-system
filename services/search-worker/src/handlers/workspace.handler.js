@@ -26,7 +26,21 @@ const workspaceHandlers = {
     await chromaService.deleteByWorkspace(workspaceId);
     console.log(`[WorkspaceHandler] Deleted all vectors for workspace: ${workspaceId}`);
     await forwardToNotification(EVENTS.WORKSPACE_DELETED,job.data);
-  }
+  },
+  [EVENTS.MEMBER_ADDED]: async (job) => {
+    console.log(`[WorkspaceHandler] MEMBER_ADDED — Workspace: ${job.data.workspaceId}`);
+    await forwardToNotification(EVENTS.MEMBER_ADDED, job.data);
+  },
+
+  [EVENTS.MEMBER_REMOVED]: async (job) => {
+    console.log(`[WorkspaceHandler] MEMBER_REMOVED — Workspace: ${job.data.workspaceId}`);
+    await forwardToNotification(EVENTS.MEMBER_REMOVED, job.data);
+  },
+
+  [EVENTS.MEMBER_PERMISSION]: async (job) => {
+    console.log(`[WorkspaceHandler] MEMBER_PERMISSION — Workspace: ${job.data.workspaceId}`);
+    await forwardToNotification(EVENTS.MEMBER_PERMISSION, job.data);
+  },
 };
 
 async function workspaceProcessor(job) {
