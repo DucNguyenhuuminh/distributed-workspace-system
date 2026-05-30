@@ -8,7 +8,6 @@ const {BullMQAdapter} = require('@bull-board/api/bullMQAdapter');
 const {ExpressAdapter} = require('@bull-board/express');
 const {getQueue, QUEUES} = require('shared');
 
-
 const serverAdapter = new ExpressAdapter();
 serverAdapter.setBasePath('/admin/queues');
 
@@ -37,7 +36,7 @@ async function start() {
   console.log('[notification-service] Service starting...');
 
   try {
-      await mongoose.connect(MONGO_URI);
+      await mongoose.connect(process.env.MONGO_URI);
       console.log('[notification-service] Connected to MongoDB!');
   } catch (err) {
       console.error('[notification-service] Error connecting to MongoDB:', err.message);
