@@ -34,9 +34,18 @@ app.use((_, res) =>
 );
 
 async function start() {
-  console.log('[notification-service] Notification service ready');
+  console.log('[notification-service] Service starting...');
+
+  try {
+      await mongoose.connect(MONGO_URI);
+      console.log('[notification-service] Connected to MongoDB!');
+  } catch (err) {
+      console.error('[notification-service] Error connecting to MongoDB:', err.message);
+      process.exit(1);
+  }
+
   startAllConsumers();
-  
+
   app.listen(process.env.PORT || 3006, () =>
     console.log(`[notification-service] Running on port ${process.env.PORT}`)
   );
