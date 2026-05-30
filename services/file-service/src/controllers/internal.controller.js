@@ -295,6 +295,18 @@ async function getStats(req, res) {
   }
 }
 
+//-----------PATCH /api/files/internal/:id/embedding-----------
+async function updateEmbedding(req,res) {
+  try {
+    const {id} = req.params;
+    const {textEmbedding, imageEmbedding} = req.body;
+
+    await Document.findByIdAndUpdate(id, {textEmbedding, imageEmbedding}, {new: true}).setOptions({includeDeleted: true});
+  } catch(err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
 module.exports = {
     deletedByWorkspace, 
     deletedByFolders, 
@@ -304,5 +316,6 @@ module.exports = {
     forceDeleteFilesByFolders,
     getFileByIdAdmin,
     getFilesAdmin,
-    getStats
+    getStats,
+    updateEmbedding
 };

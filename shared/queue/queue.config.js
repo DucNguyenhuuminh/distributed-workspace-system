@@ -3,7 +3,6 @@ const QUEUES ={
     // FOLDER: 'folder-queue',
     WORKSPACE: 'workspace-queue',
     NOTIFICATION: 'notification-queue',
-    // SEARCH: 'search-queue',
     GENERAL: 'general-queue'
 };
 

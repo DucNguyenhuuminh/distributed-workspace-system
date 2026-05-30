@@ -29,7 +29,8 @@ const services = {
     fileService: process.env.FILE_SERVICE_URL,
     workspaceService: process.env.WORKSPACE_SERVICE_URL,
     searchService: process.env.SEARCH_SERVICE_URL,
-    storageService: process.env.STORAGE_SERVICE_URL
+    storageService: process.env.STORAGE_SERVICE_URL,
+    notiService: process.env.NOTI_SERVICE_URL
 };
 
 app.use((req, res, next) => {
@@ -65,8 +66,14 @@ app.use(createProxyMiddleware({
 }));
 
 app.use(createProxyMiddleware({
-    pathFilter: ['/api/search', '/api/notifications'],
+    pathFilter: ['/api/search'],
     target: services.searchService,
+    changeOrigin: true
+}));
+
+app.use(createProxyMiddleware({
+    pathFilter: ['/api/notifications'],
+    target: services.notiService,
     changeOrigin: true
 }));
 
@@ -76,10 +83,11 @@ app.use('*',(req,res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`API Gateway is running at http://127.0.0.1:${PORT}`);
+    console.log(`API Gateway is running at ${process.env.GATEWAY_URL}`);
     console.log(`Direct Auth        -> ${services.authService}`);
     console.log(`Direct File        -> ${services.fileService}`);
     console.log(`Direct Workpace    -> ${services.workspaceService}`);
     console.log(`Direct Search      -> ${services.searchService}`);
     console.log(`Direct Storage     -> ${services.storageService}`);
+    console.log(`Direct Notification-> ${services.notiService}`);
 });

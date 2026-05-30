@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const {markAllAsRead, markAsRead, deleteNotification, getNotifications} = require('../controllers/noti.controller');
-const {authMiddleware} = require('../../../../shared/middlewares/auth.middleware');
+const {authMiddleware} = require('shared/middlewares/auth.middleware');
 
 router.use(authMiddleware);
 router.get('/',                 getNotifications);

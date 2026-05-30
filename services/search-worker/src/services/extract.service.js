@@ -24,9 +24,9 @@ const IMAGE_MIME_TYPES = [
 ];
 
 function getMimeCategory(mimeType) {
-  if (TEXT_MIME_TYPES.includes(mimeType))  return 'text';
-//   if (IMAGE_MIME_TYPES.includes(mimeType)) return 'image';
-  return null;
+    if (TEXT_MIME_TYPES.includes(mimeType))  return 'text';
+    if (IMAGE_MIME_TYPES.includes(mimeType)) return 'image'; 
+    return null;
 }
 
 function isSupportedMime(mimeType) {
@@ -41,10 +41,12 @@ async function downloadFile(objectName, originalName) {
     const response = await axios.get(`${process.env.STORAGE_SERVICE_URL}/api/storage/file/url`,
         {params: {objectName, originalName, action: 'view'}}
     );
+    
     const {url} = response.data.data;
     if (!url) {
         throw new Error('No download URL returned from storage service');
     }
+    
     const fileResponse = await axios.get(url, {responseType: 'arraybuffer'});
     return Buffer.from(fileResponse.data);
 }
@@ -68,23 +70,6 @@ async function extractText(buffer, mimeType) {
         return null;
     }
 }
-
-// async function extractMetadata(buffer, mimeType) {
-//     try {
-//         const response = await axios.put(`${TIKA_URL}/meta`, buffer, {
-//             headers: {
-//                 'Content-Type': mimeType,
-//                 'Accept': 'application/json',
-//             },
-//             maxtBodyLength: Infinity,
-//             timeout: 15000,
-//         });
-//         return response.data || {};
-//     } catch(err) {
-//         console.error(`[ExtractService] Tika metadata error:`, err.message);
-//         return {};
-//     }
-// }
 
 module.exports = {
     isSupportedMime, 

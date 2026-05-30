@@ -1,81 +1,55 @@
-let pipeline;
-let env;
-let RawImage;
+const axios = require('axios');
 
-const initTransformers = async() => {
-    if (!pipeline || !env || !RawImage) {
-        const transformers = await import('@xenova/transformers');
-        pipeline = transformers.pipeline;
-        env = transformers.env;
-        RawImage = transformers.RawImage;
-        env.backends.onnx.wasm.numThreads = 1;
-    }
-};
+const HF_TOKEN = process.env.HF_TOKEN;
+const TEXT_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
+const IMAGE_MODEL = 'sentence-transformers/clip-ViT-B-32';
 
-const TEXT_MODEL = 'Xenova/all-MiniLM-L6-v2';
-// const CLIP_MODEL = 'Xenova/clip-vit-base-patch32';
-
-let textExtractor = null;
-// let clipExtractor = null;
-
-async function loadTextModel() {
-    await initTransformers();
-    if (!textExtractor) {
-        console.log('[EmbedService] Loading model......');
-        textExtractor = await pipeline('feature-extraction', TEXT_MODEL);
-        console.log('[EmbedService] Model loaded');
-    }
-    return textExtractor;
+const HF_HEADERS = {
+    Authorization: `Bearer ${HF_TOKEN}`,
+    'Content-Type': 'application/json',
 }
 
-// async function loadClipModel() {
-//     await initTransformers();
-//     if (!clipExtractor) {
-//         console.log('[EmbedService] Loading CLIP model...');
-//         clipExtractor = await pipeline('zero-shot-image-classification', CLIP_MODEL, {
-//             quantized: true
-//         });
-//         console.log('[EmbedService] CLIP model loaded');
-//     }
-//     return clipExtractor;
-// }
-
-async function embed(text) {
-    const model = await loadTextModel();
-    const output = await model(text, {
-        pooling: 'mean',
-        normalize: true,
-    });
-    return Array.from(output.data);
+async function callWitRetry(url, payload, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const res = await axios.post(url, payload, {headers: HF_HEADERS, timeout: 30000});
+            return res.data;
+        } catch(err) {
+            const status = err.response?.status;
+            if (status === 503 && i < retries -1) {
+                console.log(`[EmbedService] Model loading, retry ${i + 1}/${retries}...`);
+                await new Promise(resolve => setTimeout(resolve,5000));
+                continue;
+            }
+            throw err;
+        }
+    }
 }
 
-// async function embedImage(imageBuffer, mimeType) {
-//     await initTransformers();
-//     const model = await loadClipModel();
-//     const image = await RawImage.fromBlob(
-//         new Blob([imageBuffer], {type: mimeType})
-//     );
-//     const output = await model.processor(image);
-//     const features = await model.model.get_image_features(output);
-//     return Array.from(features.data); 
-// }
+async function embedText(text) {
+    if (!text || text.trim().length === 0) {
+        return null;
+    }
+    const result = await callWithRetry(`https://api-inference.huggingface.co/pipeline/feature-extraction/${TEXT_MODEL}`,
+        {inputs: text.slice(0,512)}
+    );
+    const vector = Array.isArray(result[0]) ? result[0] : result;
+    return vector;
+}
 
-// async function embedBatch(texts) {
-//     const model = await loadModel();
-//     const outputs = await model(texts, {
-//         pooling: 'mean',
-//         normalize: true,
-//     });
-//     return Array.from(outputs.data);
-// }
-
-async function loadModels() {
-    await loadTextModel();
-    // await loadClipModel();
+async function embedImage(imageBuffer) {
+    if (!imageBuffer) {
+        return null;
+    }
+    const base64 = imageBuffer.toString('base64');
+    const result = await callWithRetry(`https://api-inference.huggingface.co/pipeline/feature-extraction/${IMAGE_MODEL}`,
+        {inputs: base64}
+    );
+    const vector = Array.isArray(result[0]) ? result[0] : result;
+    return vector;
 }
 
 module.exports = {
-    embed, 
-    loadModels, 
-    TEXT_MODEL
+    embedText,
+    embedImage,
 };

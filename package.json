@@ -16,6 +16,7 @@
     "dev:workspace": "npm -w workspace-service run dev",
     "dev:search": "npm -w search-worker run dev",
     "dev:storage": "npm -w storage-service run dev",
+    "dev:noti": "npm -w noti-service run dev",
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "test": "jest",

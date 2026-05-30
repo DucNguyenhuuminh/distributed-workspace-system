@@ -4,8 +4,11 @@ const {workspaceProcessor} = require('../handlers/workspace.handler');
 const {notificationProcessor} = require('../handlers/noti.handler');
 
 function startAllConsumers() {
-    createWorker(QUEUES.FILE, fileProcessor, {concurrency: 3});
-    console.log('[Consumer] file-queue');
+    createWorker(QUEUES.NOTIFICATION, notificationProcessor, {concurrency: 10});
+    console.log('[Consumer] notification-queue');
+
+    createWorker(QUEUES.GENERAL, notificationProcessor, {concurrency: 5});
+    console.log('[Consumer] general-queue');
 }
 
 module.exports = {startAllConsumers};
