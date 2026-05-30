@@ -1,6 +1,4 @@
 const {createWorker, QUEUES} = require('shared');
-const {fileProcessor} = require('../handlers/file.handler');
-const {workspaceProcessor} = require('../handlers/workspace.handler');
 const {notificationProcessor} = require('../handlers/noti.handler');
 
 function startAllConsumers() {
