@@ -45,24 +45,15 @@ async function indexDocument({ documentId, objectName, mimeType, originalName, w
 
   await saveEmbedding(documentId, textEmbedding, imageEmbedding);
   console.log(`[FileHandler] Embedded [${category}]: ${documentId}`);
+}
 
+const forwardToNotification = async (eventName, data) => {
   try {
-      const notiQueue = getQueue(QUEUES.NOTIFICATION);
-      if (notiQueue) {
-          await notiQueue.add(EVENTS.NOTIFY_USER, {
-              userId: uploadedBy,
-              type: 'GENERAL',
-              title: 'Redirected Notification',
-              message: `  Redirected: "${originalName}"`,
-              actionUrl: workspaceId ? `/workspaces/${workspaceId}` : '/', 
-              metadata: { documentId, originalName }
-          });
-          console.log(`[FileHandler] Redirected notification to Noti Queue!`);
-      } else {
-          console.warn(`[FileHandler] Not found Notification Queue!`);
-      }
-  } catch (err) {
-      console.error(`[FileHandler] Error sending notification:`, err.message);
+    const jobId = jobIdFor(`${eventName}_noti`, data.fileId || Date.now());
+    await addJob(QUEUES.NOTIFICATION,eventName,data,{...DEFAULT_JOB_OPTIONS, jobId});
+    console.log(`[FileHandler] Redirect ${eventName} to notification-queue`);
+  } catch(err) {
+    console.error(`[NotificationHandler] Error redirecting ${eventName} to notification-queue:`, err.message);
   }
 }
 
@@ -86,6 +77,7 @@ const fileHandlers = {
       workspaceId,
       uploadedBy,
     });
+    await forwardToNotification(EVENTS.FILE_MERGED,job.data);
   },
 
   [EVENTS.FILE_TRASHED]: async (job) => {
