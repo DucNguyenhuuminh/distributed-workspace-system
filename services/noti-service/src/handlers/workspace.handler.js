@@ -1,5 +1,4 @@
 const { EVENTS, addJob, QUEUES, jobIdFor, DEFAULT_JOB_OPTIONS }    = require('shared');
-const chromaService = require('../config/chroma.config');
 
 const forwardToNotification = async (eventName, data) => {
   try {
@@ -23,7 +22,6 @@ const workspaceHandlers = {
     const { workspaceId, name, actorId, memberIds } = job.data;
     console.log(`[WorkspaceHandler] WORKSPACE_DELETED — ${workspaceId}`);
 
-    await chromaService.deleteByWorkspace(workspaceId);
     console.log(`[WorkspaceHandler] Deleted all vectors for workspace: ${workspaceId}`);
     await forwardToNotification(EVENTS.WORKSPACE_DELETED,job.data);
   },
