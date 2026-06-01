@@ -1,5 +1,5 @@
 const axios          = require('axios');
-const { EVENTS }     = require('shared');
+const { EVENTS, getQueue, QUEUES }     = require('shared');
 const embedService   = require('../services/embed.service');
 const extractService = require('../services/extract.service');
 
@@ -52,8 +52,8 @@ async function indexDocument({ documentId, objectName, mimeType, originalName, w
           await notiQueue.add(EVENTS.NOTIFY_USER, {
               userId: uploadedBy,
               type: 'GENERAL',
-              title: 'AI phân tích hoàn tất',
-              message: `Hệ thống AI đã phân tích và lập chỉ mục xong file "${originalName}"`,
+              title: 'Redirected Notification',
+              message: `  Redirected: "${originalName}"`,
               actionUrl: workspaceId ? `/workspaces/${workspaceId}` : '/', 
               metadata: { documentId, originalName }
           });

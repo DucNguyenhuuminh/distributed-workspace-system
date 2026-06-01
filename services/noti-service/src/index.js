@@ -14,6 +14,7 @@ serverAdapter.setBasePath('/admin/queues');
 createBullBoard({
   queues: [
     new BullMQAdapter(getQueue(QUEUES.FILE)),
+    new BullMQAdapter(getQueue(QUEUES.WORKSPACE)),
     new BullMQAdapter(getQueue(QUEUES.NOTIFICATION)),
   ],
   serverAdapter,
