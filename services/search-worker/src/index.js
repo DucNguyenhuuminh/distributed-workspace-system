@@ -35,6 +35,9 @@ app.use((_, res) =>
 );
 
 async function start() {
+  await mongoose.connect(process.env.MONGO_URI);
+  console.log('[search-service] MongoDB connected');
+  
   console.log('[search-service] Text embedding model ready');
   startAllConsumers();
   
