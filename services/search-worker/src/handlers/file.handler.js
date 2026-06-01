@@ -3,7 +3,7 @@ const { EVENTS }     = require('shared');
 const embedService   = require('../services/embed.service');
 const extractService = require('../services/extract.service');
 
-const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL || 'http://localhost:3002';
+const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL;
 
 async function saveEmbedding(documentId, textEmbedding, imageEmbedding) {
   await axios.patch(
@@ -45,6 +45,25 @@ async function indexDocument({ documentId, objectName, mimeType, originalName, w
 
   await saveEmbedding(documentId, textEmbedding, imageEmbedding);
   console.log(`[FileHandler] Embedded [${category}]: ${documentId}`);
+
+  try {
+      const notiQueue = getQueue(QUEUES.NOTIFICATION);
+      if (notiQueue) {
+          await notiQueue.add(EVENTS.NOTIFY_USER, {
+              userId: uploadedBy,
+              type: 'GENERAL',
+              title: 'AI phân tích hoàn tất',
+              message: `Hệ thống AI đã phân tích và lập chỉ mục xong file "${originalName}"`,
+              actionUrl: workspaceId ? `/workspaces/${workspaceId}` : '/', 
+              metadata: { documentId, originalName }
+          });
+          console.log(`[FileHandler] Redirected notification to Noti Queue!`);
+      } else {
+          console.warn(`[FileHandler] Not found Notification Queue!`);
+      }
+  } catch (err) {
+      console.error(`[FileHandler] Error sending notification:`, err.message);
+  }
 }
 
 async function removeEmbedding(documentId) {
@@ -97,7 +116,6 @@ const fileHandlers = {
             mimeType, originalName, newWorkspaceId, workspaceId, uploadedBy } = job.data;
     const resolvedId = documentId || fileId;
     console.log(`[FileHandler] FILE_MOVED — ${resolvedId}`);
-    // Embedding không đổi khi move, chỉ cần reindex nếu workspaceId thay đổi
     await indexDocument({
       documentId:   resolvedId,
       objectName:   objectName || minioObjectPath,

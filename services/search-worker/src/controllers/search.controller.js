@@ -42,7 +42,6 @@ async function search(req, res) {
 
     const embeddingField = type === 'image' ? 'imageEmbedding' : 'textEmbedding';
 
-    // MongoDB Atlas Vector Search
     const results = await Document.aggregate([
       {
         $vectorSearch: {
