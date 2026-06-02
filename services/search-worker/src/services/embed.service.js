@@ -9,7 +9,7 @@ const HF_HEADERS = {
     'Content-Type': 'application/json',
 }
 
-async function callWitRetry(url, payload, retries = 3) {
+async function callWithRetry(url, payload, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
             const res = await axios.post(url, payload, {headers: HF_HEADERS, timeout: 30000});

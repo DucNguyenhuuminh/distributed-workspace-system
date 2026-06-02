@@ -1,5 +1,5 @@
-const axios          = require('axios');
-const { EVENTS, getQueue, QUEUES }     = require('shared');
+const axios = require('axios');
+const { EVENTS, getQueue, QUEUES, addJob, jobIdFor, DEFAULT_JOB_OPTIONS } = require('shared');
 const embedService   = require('../services/embed.service');
 const extractService = require('../services/extract.service');
 
@@ -66,12 +66,12 @@ async function removeEmbedding(documentId) {
 
 const fileHandlers = {
   [EVENTS.FILE_MERGED]: async (job) => {
-    const { fileId, documentId, minioObjectPath, objectName,
-            mimeType, originalName, workspaceId, uploadedBy } = job.data;
-    console.log(`[FileHandler] FILE_MERGED — ${documentId || fileId}`);
+    const { fileId, objectName, mimeType, 
+      originalName, workspaceId, uploadedBy } = job.data;
+    console.log(`[FileHandler] FILE_MERGED — ${fileId}`);
     await indexDocument({
-      documentId:   documentId || fileId,
-      objectName:   objectName || minioObjectPath,
+      fileId:   fileId,
+      objectName:   objectName,
       mimeType,
       originalName: originalName || '',
       workspaceId,
@@ -90,12 +90,12 @@ const fileHandlers = {
   },
 
   [EVENTS.FILE_RESTORED]: async (job) => {
-    const { fileId, documentId, minioObjectPath, objectName,
-            mimeType, originalName, workspaceId, uploadedBy } = job.data;
-    console.log(`[FileHandler] FILE_RESTORED — ${documentId || fileId}`);
+    const { fileId, objectName, mimeType, originalName, 
+      workspaceId, uploadedBy } = job.data;
+    console.log(`[FileHandler] FILE_RESTORED — ${fileId}`);
     await indexDocument({
-      documentId:   documentId || fileId,
-      objectName:   objectName || minioObjectPath,
+      documentId:   fileId,
+      objectName:   objectName,
       mimeType,
       originalName: originalName || '',
       workspaceId,
@@ -104,13 +104,13 @@ const fileHandlers = {
   },
 
   [EVENTS.FILE_MOVED]: async (job) => {
-    const { fileId, documentId, objectName, minioObjectPath,
-            mimeType, originalName, newWorkspaceId, workspaceId, uploadedBy } = job.data;
-    const resolvedId = documentId || fileId;
+    const { fileId, objectName, mimeType, originalName, 
+      newWorkspaceId, workspaceId, uploadedBy } = job.data;
+    const resolvedId = fileId;
     console.log(`[FileHandler] FILE_MOVED — ${resolvedId}`);
     await indexDocument({
       documentId:   resolvedId,
-      objectName:   objectName || minioObjectPath,
+      objectName:   objectName,
       mimeType,
       originalName: originalName || '',
       workspaceId:  newWorkspaceId || workspaceId,

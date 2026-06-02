@@ -57,22 +57,22 @@ services:
         limits:
           memory: 256m
 
-  chroma:
-    image: chromadb/chroma:latest
-    container_name: workspace-chroma
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    environment:
-      - IS_PERSISTENT=TRUE
-      - ANONYMIZED_TELEMETRY=FALSE
-      - CHROMA_SERVER_AUTHN_CREDENTIALS=
-    volumes:
-      - chroma_data:/chroma/chroma
-    deploy:
-      resources:
-        limits:
-          memory: 300m
+  # chroma:
+  #   image: chromadb/chroma:latest
+  #   container_name: workspace-chroma
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - IS_PERSISTENT=TRUE
+  #     - ANONYMIZED_TELEMETRY=FALSE
+  #     - CHROMA_SERVER_AUTHN_CREDENTIALS=
+  #   volumes:
+  #     - chroma_data:/chroma/chroma
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 300m
   
   tika:
     image: apache/tika:latest
@@ -89,4 +89,3 @@ volumes:
   mongo_data:
   minio_data:
   redis_data:
-  chroma_data:

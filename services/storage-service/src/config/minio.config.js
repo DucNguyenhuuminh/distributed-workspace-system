@@ -27,9 +27,7 @@
 
 const {S3Client} = require('@aws-sdk/client-s3');
 
-const endpointUrl = process.env.MINIO_ENDPOINT.startsWith('http')
-    ? `${process.env.MINIO_ENDPOINT}/storage/v1/s3`
-    : `https://${process.env.MINIO_ENDPOINT}/storage/v1/s3`;
+const endpointUrl = process.env.MINIO_ENDPOINT;
 
 const s3Client = new S3Client({
     forcePathStyle: true,

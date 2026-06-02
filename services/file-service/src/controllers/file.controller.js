@@ -130,17 +130,17 @@ async function renameFile(req,res) {
         await file.save();
         console.log(`[FileController] Successfully renamed file to '${name}'`);
 
-        try {
-            await addJob(
-                queueForEvent(EVENTS.FILE_RENAMED),
-                EVENTS.FILE_RENAMED,
-                {fileId, newName: name, actorId: userId, fileName: file.originalName, workspaceId: file.workspaceId},
-                {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_RENAMED, file._id.toString())}
-            );
-            console.log(`[FileController] Enqueued FILE_RENAMED job for file: ${fileId}`);
-        } catch(jobErr) {
-            console.error('[Queue Error] Failed to enqueue FILE_RENAMED job', jobErr.message);
-        }
+        // try {
+        //     await addJob(
+        //         queueForEvent(EVENTS.FILE_RENAMED),
+        //         EVENTS.FILE_RENAMED,
+        //         {fileId, newName: name, actorId: userId, fileName: file.originalName, workspaceId: file.workspaceId},
+        //         {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_RENAMED, file._id.toString())}
+        //     );
+        //     console.log(`[FileController] Enqueued FILE_RENAMED job for file: ${fileId}`);
+        // } catch(jobErr) {
+        //     console.error('[Queue Error] Failed to enqueue FILE_RENAMED job', jobErr.message);
+        // }
 
         return res.json({message: "Rename successfully", data: file});
     } catch(err) {
@@ -415,7 +415,8 @@ async function moveFile(req,res) {
             await addJob(
                 queueForEvent(EVENTS.FILE_MOVED),
                 EVENTS.FILE_MOVED,
-                {documentId:     file._id.toString(),
+                {
+                    fileId:     file._id.toString(),
                     objectName:     physicalFile.minioObjectPath,
                     mimeType:       physicalFile.mimeType,         
                     newFolderId:    targetFolderId || null,

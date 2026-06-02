@@ -75,30 +75,30 @@ async function initUpload(req,res) {
         const userId = req.user.userId;
         const {filename ,totalChunks, mimeType, sizeBytes, workspaceId, folderId} = req.body;
 
-        if (workspaceId) {
-            try {
-                const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${workspaceId}`,
-                    {headers: {Authorization: req.headers.authorization}}
-                );
-                const workspace = response.data.data;
-                const member = workspace.members.find((m) => m.userId.toString() === userId);
-                if (!member) {
-                    console.warn(`[FileWorkerController] Init upload failed: User ${userId} not in workspace`);
-                    return res.status(403).json({message:"You are not a member of this workspace"});
-                }
-                const canEdit = member.role === 'ADMIN' || member.permissions.includes("editor");
-                if (!canEdit) {
-                    console.warn(`[FileWorkerController] Init upload failed: User ${userId} lacks 'editor' permission`);
-                    return res.status(403).json({message: "No permission to upload in this workspace"});
-                }
-            } catch(err) {
-                if (err.response?.status === 403) {
-                    return res.status(403).json({ message: 'No permission in this workspace' });
-                }
-                console.error(`[FileWorkerController] Failed to connect to workspace service:`, err.message);
-                return res.status(500).json({ message: 'Cannot connect to workspace-service' });
-            }
-        }
+        // if (workspaceId) {
+        //     try {
+        //         const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/${workspaceId}`,
+        //             {headers: {Authorization: req.headers.authorization}}
+        //         );
+        //         const workspace = response.data.data;
+        //         const member = workspace.members.find((m) => m.userId.toString() === userId);
+        //         if (!member) {
+        //             console.warn(`[FileWorkerController] Init upload failed: User ${userId} not in workspace`);
+        //             return res.status(403).json({message:"You are not a member of this workspace"});
+        //         }
+        //         const canEdit = member.role === 'ADMIN' || member.permissions.includes("editor");
+        //         if (!canEdit) {
+        //             console.warn(`[FileWorkerController] Init upload failed: User ${userId} lacks 'editor' permission`);
+        //             return res.status(403).json({message: "No permission to upload in this workspace"});
+        //         }
+        //     } catch(err) {
+        //         if (err.response?.status === 403) {
+        //             return res.status(403).json({ message: 'No permission in this workspace' });
+        //         }
+        //         console.error(`[FileWorkerController] Failed to connect to workspace service:`, err.message);
+        //         return res.status(500).json({ message: 'Cannot connect to workspace-service' });
+        //     }
+        // }
 
         let storageData;
         try {
@@ -106,8 +106,10 @@ async function initUpload(req,res) {
             const response = await axios.post(`${STORAGE_SERVICE_URL}/api/storage/multipart/init`,{filename, mimeType, totalChunks});
             storageData = response.data.data;
         } catch(err) {
-            console.error('[FileWorkerController] Storage service error during init:', err.response?.data || err.message);
-            return res.status(500).json({message: 'Cannot connect to storage-service'});
+            const realError = err.response?.data?.message || err.message;
+            console.error(`[FileWorker] Lỗi gọi Storage:`, realError);
+            const statusCode = err.response?.status || 500;
+            return res.status(statusCode).json({ message: realError });
         }
 
         console.log(`[FileWorkerController] Init upload successfully. UploadId generated.`);
@@ -186,7 +188,8 @@ async function mergeUpload(req,res) {
         return res.status(200).json({message: "File merged and saved successful", data: file});
     } catch(err) {
         console.error(`[FileWorkerController] System error in mergeUpload:`, err.message);
-        return res.status(500).json({message: err.message});
+        const statusCode = err.response?.status || 500;
+        return res.status(statusCode).json({ message: `Failed to merge: ${realError}` });
     }
 }
 
