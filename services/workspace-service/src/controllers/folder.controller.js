@@ -311,8 +311,13 @@ async function deleteFolder(req, res) {
                 headers: { Authorization: req.headers.authorization }
             });
         } catch (err) {
-            console.error(`[FolderController] Failed to soft delete files via File Service for folder ${folderId}:`, err.message);
-            return res.status(500).json({ message: "Error system when delete all the files" });
+            const realError = err.response?.data?.message || err.message;
+            console.error(`[FolderDeleteError] Lỗi thực tế khi xóa folder:`, realError);
+            if (err.stack) console.error(err.stack); 
+
+            return res.status(err.response?.status || 500).json({ 
+                message: `Error system when delete all the files: ${realError}` 
+            });
         }
         
         await Folder.updateMany(
@@ -591,8 +596,15 @@ async function emptyTrashFolder(req, res) {
         }
       );
     } catch (err) {
-        console.error(`[FolderController] Failed to force delete internal files via File Service:`, err.message);
-        return res.status(500).json({ message: "Error system when cleaning all the files" });
+        const realError = err.response?.data?.message || err.response?.data || err.message;
+    
+        console.error(`\n[CleanFilesError] LỖI THỰC TẾ KHI DỌN DẸP FILE:`, realError);
+        if (err.stack) console.error(err.stack);
+    
+        const statusCode = err.response?.status || 500;
+        return res.status(statusCode).json({ 
+            message: `Error system when cleaning all the files: ${realError}` 
+        });
     }
     
     await Folder.deleteMany({ _id: { $in: allFolderIds } });
