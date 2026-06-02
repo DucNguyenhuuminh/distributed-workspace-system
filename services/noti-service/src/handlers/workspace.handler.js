@@ -1,4 +1,4 @@
-const { EVENTS, addJob, QUEUES, jobIdFor, DEFAULT_JOB_OPTIONS }    = require('shared');
+const { EVENTS, addJob, QUEUES, jobIdFor, DEFAULT_JOB_OPTIONS } = require('shared');
 
 const forwardToNotification = async (eventName, data) => {
   try {

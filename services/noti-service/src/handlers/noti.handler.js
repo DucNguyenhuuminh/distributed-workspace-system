@@ -3,9 +3,11 @@ const notificationService = require('../services/noti.service');
 const { nodeKeyToRedisOptions } = require('ioredis/built/cluster/util');
 
 const notiHandlers = {
-    // ── File events ──────────────────────────────────────
+  // ── File events ──────────────────────────────────────
   [EVENTS.FILE_MERGED]: async (job) => {
     const { uploadedBy, originalName, workspaceId } = job.data;
+    console.log(`[NotiHandler - FILE_MERGED] Check ID: uploadedBy = ${uploadedBy}`);
+    
     await notificationService.createNotification({
       userId:    uploadedBy,
       actorId:   null,
@@ -20,6 +22,8 @@ const notiHandlers = {
   // ── Workspace events ──────────────────────────────────
   [EVENTS.WORKSPACE_CREATED]: async (job) => {
     const { workspaceId, createdBy, name } = job.data;
+    console.log(`[NotiHandler - WORKSPACE_CREATED] Check ID: createdBy = ${createdBy}`);
+
     await notificationService.createNotification({
       userId:    createdBy,
       actorId:   null,
@@ -33,7 +37,12 @@ const notiHandlers = {
 
   [EVENTS.WORKSPACE_DELETED]: async (job) => {
     const { workspaceId, name, memberIds = [], actorId } = job.data;
-    if (!memberIds.length) return;
+    console.log(`[NotiHandler - WORKSPACE_DELETED] Danh sách nhận (memberIds): ${memberIds.join(', ')}`);
+    
+    if (!memberIds.length) {
+        console.warn(`[NotiHandler] Bỏ qua vì không có memberIds nào để gửi thông báo.`);
+        return;
+    }
 
     const notifications = memberIds.map((userId) => ({
       userId,
@@ -50,7 +59,9 @@ const notiHandlers = {
 
   [EVENTS.MEMBER_ADDED]: async (job) => {
     const { workspaceId, targetUserId, workspaceName, actorId } = job.data;
-    if (!targetUserId)  return;
+    console.log(`[NotiHandler - MEMBER_ADDED] Check ID: targetUserId = ${targetUserId}`);
+    
+    if (!targetUserId) return;
     
     await notificationService.createNotification({
       userId:    targetUserId,
@@ -65,6 +76,8 @@ const notiHandlers = {
 
   [EVENTS.MEMBER_REMOVED]: async (job) => {
     const { workspaceId, targetUserId, workspaceName, removedBy } = job.data;
+    console.log(`[NotiHandler - MEMBER_REMOVED] Check ID: targetUserId = ${targetUserId}`);
+
     await notificationService.createNotification({
       userId:   targetUserId,
       actorId:  removedBy || null,
@@ -78,6 +91,8 @@ const notiHandlers = {
 
   [EVENTS.MEMBER_PERMISSION]: async (job) => {
     const { workspaceId, targetUserId, workspaceName, newPermissions, actorId } = job.data;
+    console.log(`[NotiHandler - MEMBER_PERMISSION] Check ID: targetUserId = ${targetUserId}`);
+
     await notificationService.createNotification({
       userId:    targetUserId,
       actorId:   actorId || null,
@@ -117,6 +132,8 @@ const notiHandlers = {
   // ── General ───────────────────────────────────────────
   [EVENTS.NOTIFY_USER]: async (job) => {
     const { userId, actorId, type, title, message, actionUrl, metadata } = job.data;
+    console.log(`[NotiHandler - NOTIFY_USER] Check ID: userId = ${userId}`);
+
     await notificationService.createNotification({
       userId,
       actorId:   actorId   || null,
@@ -139,6 +156,7 @@ async function notificationProcessor(job) {
 
     try {
     await handler(job);
+    console.log(`[NOTI QUEUE] ĐÃ XỬ LÝ XONG SỰ KIỆN: ${job.name}\n`);
   } catch (err) {
     console.error(`[NotificationHandler] Error processing ${job.name}:`, err.message);
     throw err;
