@@ -11,13 +11,16 @@ async function createInviteLink(req,res) {
         const userId = req.user.userId;
         const workspaceId = req.params.id;
         const {expiresInHours=null, autoApprove=false}=req.body;
+        console.log(`[InviteController] User ${userId} attempting to create invite link for workspace ${workspaceId}`);
 
         const workspace = await Workspace.findById(workspaceId);
         if (!workspace) {
+            console.warn(`[InviteController] Create invite failed: Workspace ${workspaceId} not found`);
             return res.status(404).json({ message: 'Workspace not found' });
         }
         const member = workspace.members.find((m) => m.userId.toString() === userId);
         if (!member) {
+            console.warn(`[InviteController] Create invite denied: User ${userId} is not a member of workspace ${workspaceId}`);
             return res.status(403).json({ message: 'Only Admin can create invite link' });
         }
 
@@ -34,6 +37,7 @@ async function createInviteLink(req,res) {
         });
 
         const inviteUrl = `${process.env.FRONTEND_URL}/invite/${invite.token}`;
+        console.log(`[InviteController] Successfully created invite link. Token: ${invite.token}`);
 
         return res.status(201).json({
             message: 'Invite link created',
@@ -46,6 +50,7 @@ async function createInviteLink(req,res) {
             }
         });
     } catch(err) {
+        console.error(`[InviteController] System error in createInviteLink:`, err.message);
         return res.status(500).json({ message: err.message });
     }
 }
@@ -54,18 +59,23 @@ async function createInviteLink(req,res) {
 async function getInviteInfo(req,res) {
     try {
         const {token} = req.params;
+        console.log(`[InviteController] Fetching info for invite token: ${token}`);
 
         const invite = await WorkspaceInvite.findOne({token});
         if (!invite) {
+            console.warn(`[InviteController] Get invite info failed: Token ${token} not found`);
             return res.status(404).json({ message: 'Invite link not found' });
         }
         if (invite.isRevoked) {
+            console.warn(`[InviteController] Get invite info failed: Token ${token} has been revoked`);
             return res.status(403).json({ message: 'Invite link has been revoked' });
         }
         if (invite.expiredAt && new Date() > invite.expiredAt) {
+            console.warn(`[InviteController] Get invite info failed: Token ${token} has expired`);
             return res.status(403).json({ message: 'Invite link has expired' });
         }
         const workspace = await Workspace.findById(invite.workspaceId).select('name members');
+        console.log(`[InviteController] Valid token ${token}. Returning info for workspace ${invite.workspaceId}`);
 
         return res.json({
             message: 'Invite link valid',
@@ -78,6 +88,7 @@ async function getInviteInfo(req,res) {
             }
         });                                                                                                                               
     } catch(err) {
+        console.error(`[InviteController] System error in getInviteInfo:`, err.message);
         return res.status(500).json({ message: err.message });
     }
 }
@@ -88,39 +99,46 @@ async function joinWorkspace(req,res) {
         const userId = req.user.userId;
         const {token} = req.params;
         const {message: userMessage} = req.body;
+        console.log(`[InviteController] User ${userId} attempting to join workspace via token: ${token}`);
 
         const invite = await WorkspaceInvite.findOne({token});
         if (!invite) {
+            console.warn(`[InviteController] Join failed: Token ${token} not found`);
             return res.status(404).json({ message: 'Invite link not found' });
         }
         if (invite.isRevoked) {
+            console.warn(`[InviteController] Join failed: Token ${token} is revoked`);
             return res.status(403).json({ message: 'Invite link has been revoked' });
         }
         if (invite.expiredAt && new Date() > invite.expiredAt) {
+            console.warn(`[InviteController] Join failed: Token ${token} has expired`);
             return res.status(403).json({ message: 'Invite link has expired' });
         }
 
         const workspaceId = invite.workspaceId.toString();
         const workspace = await Workspace.findById(workspaceId);
         if (!workspace) {
+            console.warn(`[InviteController] Join failed: Workspace ${workspaceId} not found`);
             return res.status(404).json({ message: 'Workspace not found' });
         }
-
         const alreadyMember = workspace.members.some((m) => m.userId.toString() === userId);
         if (alreadyMember) {
+            console.warn(`[InviteController] Join failed: User ${userId} is already a member of workspace ${workspaceId}`);
             return res.status(409).json({ message: 'You are already a member' });
         }
 
         let userInfo =  {email: '', username: ''};
         try {
-            const response = await axios.get(`${process.env.AUTH_SERVICE_URL}/api/auth/internal/find-by-email`, {params: {email: ''}});
+            console.log(`[InviteController] Fetching user info for ${userId} from Auth Service`);
+            const response = await axios.get(`${process.env.AUTH_SERVICE_URL}/api/auth/internal/find-by-id`, {params: {id: userId}});
             userInfo = response.data.data;
         } catch(err) {
-            console.error('[InviteController] Cannot fetch user info:', err.message);
+            console.error(`[InviteController] Cannot fetch user info from Auth Service:`, err.message);
         }
 
         // Auto Approve = true
         if (invite.autoApprove) {
+            console.log(`[InviteController] Auto-approve is ON. Adding user ${userId} to workspace ${workspaceId} directly`);
             workspace.members.push({
                 userId,
                 role: 'MEMBER',
@@ -139,17 +157,18 @@ async function joinWorkspace(req,res) {
                     },
                     {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_ADDED, `${workspaceId}_${userId}`)}
                 );
+                console.log(`[InviteController] Enqueued MEMBER_ADDED job for user ${userId}`);
             } catch(jobErr) {
                 console.error('[Queue Error] MEMBER_ADDED:', jobErr.message);
             }
 
-            return res.json({
-                message: 'You have been added to the workspace',
-                data:    { status: 'approved', workspaceId, workspaceName: workspace.name },
+            return res.json({message: 'You have been added to the workspace',
+                data: {status: 'approved', workspaceId, workspaceName: workspace.name},
             });
         }
 
         // Auto Approve = false
+        console.log(`[InviteController] Auto-approve is OFF. Creating Join Request for user ${userId}`);
         const existingRequest = await JoinRequest.findOne({
             workspaceId,
             userId,
@@ -157,8 +176,8 @@ async function joinWorkspace(req,res) {
         });
 
         if (existingRequest) {
-            return res.status(409).json({
-                message: 'You already have a pending request',
+            console.warn(`[InviteController] Join failed: User ${userId} already has a pending request in workspace ${workspaceId}`);
+            return res.status(409).json({message: 'You already have a pending request',
                 data: {requestId: existingRequest._id}
             });
         }
@@ -171,6 +190,7 @@ async function joinWorkspace(req,res) {
             userEmail: userInfo.email,
             userName: userInfo.username
         });
+        console.log(`[InviteController] Join Request created successfully. ID: ${joinRequest._id}`);
 
         try {
             const admin = workspace.members.find(m => m.role === 'ADMIN');
@@ -181,7 +201,7 @@ async function joinWorkspace(req,res) {
                     {
                         userId: admin.userId.toString(),       
                         actorId: userId,
-                        type: 'JOIN REQUEST',
+                        type: 'JOIN_REQUEST',
                         title: 'Request to join workspace',
                         message:   `${userInfo.username || userInfo.email} wants to join workspace "${workspace.name}"`,
                         actionUrl: `/workspaces/${workspaceId}/requests`,
@@ -189,9 +209,10 @@ async function joinWorkspace(req,res) {
                     },
                     {...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_ADDED, `${workspaceId}_${userId}`)}
                 );
+                console.log(`[InviteController] Enqueued NOTIFY_USER job to Admin ${admin.userId}`);
             }
         } catch(jobErr) {
-            console.error('[Queue Error] MEMBER_ADDED:', jobErr.message);
+            console.error('[Queue Error] JOIN_REQUEST notification:', jobErr.message);
         }
 
         return res.status(201).json({
@@ -199,6 +220,7 @@ async function joinWorkspace(req,res) {
             data: {status: 'pending', requestId: joinRequest._id}
         });
     } catch(err) {
+        console.error(`[InviteController] System error in joinWorkspace:`, err.message);
         if (err.code === 11000) {
             return res.status(409).json({ message: 'You already have a pending request' });
         }
@@ -207,45 +229,59 @@ async function joinWorkspace(req,res) {
 }
 
 // ---------GET /api/workspaces/:id/requests ------------------------
-async function getJoinRequests(req,res) {
+async function getJoinRequests(req, res) {
     try {
         const adminId = req.user.userId;
         const workspaceId = req.params.id;
-        const {status = 'pending'} = req.query;
+        const { status = 'pending' } = req.query;
+
+        console.log(`[InviteController] Admin ${adminId} fetching '${status}' requests for workspace ${workspaceId}`);
 
         const workspace = await Workspace.findById(workspaceId);
         if (!workspace) {
+            console.warn(`[InviteController] Fetch requests failed: Workspace ${workspaceId} not found`);
             return res.status(404).json({ message: 'Workspace not found' });
         }
+        
         const member = workspace.members.find((m) => m.userId.toString() === adminId);
         if (!member || member.role !== 'ADMIN') {
+            console.warn(`[InviteController] Fetch requests denied: User ${adminId} is not ADMIN`);
             return res.status(403).json({ message: 'Only Admin can view requests' });
         }
 
-        const requests = await JoinRequest.find({workspaceId, status}).sort({created: -1});
+        const requests = await JoinRequest.find({ workspaceId, status }).sort({ created: -1 });
+        console.log(`[InviteController] Successfully fetched ${requests.length} requests`);
+        
         return res.json({data: requests});
-    } catch(err) {
+    } catch (err) {
+        console.error(`[InviteController] System error in getJoinRequests:`, err.message);
         return res.status(500).json({ message: err.message });
     }
 }
 
 // ---------PATCH /api/workspaces/:id/requests/:requestId ------------------------
-async function reviewJoinRequest(req,res) {
+async function reviewJoinRequest(req, res) {
     try {
         const adminId = req.user.userId;
         const workspaceId = req.params.id;
         const requestId = req.params.requestId;
-        const {action} = req.body;
+        const { action } = req.body;
+
+        console.log(`[InviteController] Admin ${adminId} reviewing request ${requestId} with action: ${action}`);
 
         if (!['approve', 'reject'].includes(action)) {
             return res.status(400).json({ message: 'action must be approve or reject' });
         }
+        
         const workspace = await Workspace.findById(workspaceId);
         if (!workspace) {
+            console.warn(`[InviteController] Review failed: Workspace ${workspaceId} not found`);
             return res.status(404).json({ message: 'Workspace not found' });
         }
+        
         const member = workspace.members.find((m) => m.userId.toString() === adminId);
         if (!member || member.role !== 'ADMIN') {
+            console.warn(`[InviteController] Review denied: User ${adminId} is not ADMIN`);
             return res.status(403).json({ message: 'Only Admin can review requests' });
         }
 
@@ -255,6 +291,7 @@ async function reviewJoinRequest(req,res) {
             status: 'pending',
         });
         if (!request) {
+            console.warn(`[InviteController] Review failed: Request ${requestId} not found or already reviewed`);
             return res.status(404).json({ message: 'Request not found or already reviewed' });
         }
 
@@ -271,198 +308,229 @@ async function reviewJoinRequest(req,res) {
                     role: 'MEMBER',
                     permissions: 'viewer'
                 });
+                await workspace.save();
+                console.log(`[InviteController] User ${request.userId} approved and added to workspace ${workspaceId}`);
             }
 
             try {
                 await addJob(
-                queueForEvent(EVENTS.MEMBER_ADDED),
-                EVENTS.MEMBER_ADDED,
-                {
-                    workspaceId,
-                    targetUserId:  request.userId.toString(),
-                    workspaceName: workspace.name,
-                    actorId:       adminId,
-                },
-                { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_ADDED, `${workspaceId}_${request.userId}`) }
+                    queueForEvent(EVENTS.MEMBER_ADDED),
+                    EVENTS.MEMBER_ADDED,
+                    {
+                        workspaceId,
+                        targetUserId: request.userId.toString(),
+                        workspaceName: workspace.name,
+                        actorId: adminId,
+                    },
+                    { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_ADDED, `${workspaceId}_${request.userId}`) }
                 );
+                console.log(`[InviteController] Enqueued MEMBER_ADDED job for approved user ${request.userId}`);
             } catch (jobErr) {
                 console.error('[Queue Error] MEMBER_ADDED:', jobErr.message);
             }
-        }else {
+            
+        } else {
+            console.log(`[InviteController] Request ${requestId} rejected. Preparing notification for user ${request.userId}`);
             try {
                 await addJob(
-                queueForEvent(EVENTS.NOTIFY_USER),
-                EVENTS.NOTIFY_USER,
-                {
-                    userId:    request.userId.toString(),
-                    type:      'JOIN_REJECTED',
-                    title:     'You request have been denied',
-                    message:   `Your request joining workspace "${workspace.name}" has been denied`,
-                    actionUrl: null,
-                    metadata:  { workspaceId },
-                },
-                { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.NOTIFY_USER, `reject_${requestId}`) }
+                    queueForEvent(EVENTS.NOTIFY_USER),
+                    EVENTS.NOTIFY_USER,
+                    {
+                        userId: request.userId.toString(),
+                        actorId: adminId,
+                        type: 'JOIN_REJECTED',
+                        title: 'Your request has been denied',
+                        message: `Your request to join workspace "${workspace.name}" has been denied by the administrator.`,
+                        actionUrl: null,
+                        metadata: { workspaceId, requestId },
+                    },
+                    { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.NOTIFY_USER, `reject_${requestId}_${Date.now()}`) }
                 );
+                console.log(`[InviteController] Enqueued NOTIFY_USER job for rejected request ${requestId}`);
             } catch (jobErr) {
-                console.error('[Queue Error] NOTIFY_USER:', jobErr.message);
+                console.error('[Queue Error] NOTIFY_USER (Join Rejected):', jobErr.message);
             }
         }
 
         return res.json({
-            message: `Request ${action} successfully`,
-            data: {status: request.status},
+            message: `Request ${action}d successfully`,
+            data: { status: request.status },
         });
-    } catch(err) {
+    } catch (err) {
+        console.error(`[InviteController] System error in reviewJoinRequest:`, err.message);
         return res.status(500).json({ message: err.message });
     }
 }
 
 // ---------PATCH /api/workspaces/:id/requests/approved-all ------------------------
 async function approveAllRequests(req, res) {
-  try {
-    const adminId     = req.user.userId;
-    const workspaceId = req.params.id;
+    try {
+        const adminId = req.user.userId;
+        const workspaceId = req.params.id;
 
-    const workspace = await Workspace.findById(workspaceId);
-    if (!workspace) {
-        return res.status(404).json({ message: 'Workspace not found' });
-    }
-    const member = workspace.members.find((m) => m.userId.toString() === adminId);
-    if (!member || member.role !== 'ADMIN') {
-      return res.status(403).json({ message: 'Only Admin can approve requests' });
-    }
+        console.log(`[InviteController] Admin ${adminId} requesting to approve ALL pending requests in workspace ${workspaceId}`);
 
-    const pendingRequests = await JoinRequest.find({
-      workspaceId,
-      status: 'pending',
-    });
+        const workspace = await Workspace.findById(workspaceId);
+        if (!workspace) {
+            console.warn(`[InviteController] Approve All failed: Workspace ${workspaceId} not found`);
+            return res.status(404).json({ message: 'Workspace not found' });
+        }
+        
+        const member = workspace.members.find((m) => m.userId.toString() === adminId);
+        if (!member || member.role !== 'ADMIN') {
+            console.warn(`[InviteController] Approve All denied: User ${adminId} is not ADMIN`);
+            return res.status(403).json({ message: 'Only Admin can approve requests' });
+        }
 
-    if (!pendingRequests.length) {
-      return res.json({ message: 'No pending requests', data: { approved: 0 } });
-    }
-
-    let approved = 0;
-
-    for (const request of pendingRequests) {
-      const alreadyMember = workspace.members.some(
-        (m) => m.userId.toString() === request.userId.toString()
-      );
-
-      if (!alreadyMember) {
-        workspace.members.push({
-          userId:      request.userId,
-          role:        'MEMBER',
-          permissions: 'viewer',
-        });
-        approved++;
-      }
-
-      request.status     = 'approved';
-      request.reviewedBy = adminId;
-      request.reviewedAt = new Date();
-      await request.save();
-
-      try {
-        await addJob(
-          queueForEvent(EVENTS.MEMBER_ADDED),
-          EVENTS.MEMBER_ADDED,
-          {
+        const pendingRequests = await JoinRequest.find({
             workspaceId,
-            targetUserId:  request.userId.toString(),
-            workspaceName: workspace.name,
-            actorId:       adminId,
-          },
-          { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_ADDED, `${workspaceId}_${request.userId}`) }
-        );
-      } catch (jobErr) {
-        console.error('[Queue Error] MEMBER_ADDED bulk:', jobErr.message);
-      }
+            status: 'pending',
+        });
+
+        if (!pendingRequests.length) {
+            console.log(`[InviteController] No pending requests found to approve for workspace ${workspaceId}`);
+            return res.json({ message: 'No pending requests', data: { approved: 0 } });
+        }
+
+        let approved = 0;
+        for (const request of pendingRequests) {
+            const alreadyMember = workspace.members.some(
+                (m) => m.userId.toString() === request.userId.toString()
+            );
+
+            if (!alreadyMember) {
+                workspace.members.push({
+                    userId: request.userId,
+                    role: 'MEMBER',
+                    permissions: 'viewer',
+                });
+                approved++;
+            }
+
+            request.status = 'approved';
+            request.reviewedBy = adminId;
+            request.reviewedAt = new Date();
+            await request.save();
+
+            try {
+                await addJob(
+                    queueForEvent(EVENTS.MEMBER_ADDED),
+                    EVENTS.MEMBER_ADDED,
+                    {
+                        workspaceId,
+                        targetUserId: request.userId.toString(),
+                        workspaceName: workspace.name,
+                        actorId: adminId,
+                    },
+                    { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.MEMBER_ADDED, `${workspaceId}_${request.userId}`) }
+                );
+            } catch (jobErr) {
+                console.error(`[Queue Error] MEMBER_ADDED bulk (User ${request.userId}):`, jobErr.message);
+            }
+        }
+
+        await workspace.save();
+        console.log(`[InviteController] Successfully approved ${approved} requests in workspace ${workspaceId}`);
+
+        return res.json({
+            message: `Approved ${approved} requests`,
+            data: { approved, total: pendingRequests.length },
+        });
+    } catch (err) {
+        console.error(`[InviteController] System error in approveAllRequests:`, err.message);
+        return res.status(500).json({ message: err.message });
     }
-
-    await workspace.save();
-
-    return res.json({
-      message: `Approved ${approved} requests`,
-      data:    { approved, total: pendingRequests.length },
-    });
-  } catch (err) {
-    return res.status(500).json({ message: err.message });
-  }
 }
 
 // ---------DELETE /api/workspaces/:id/invite/:token ------------------------
 async function revokeInviteLink(req, res) {
-  try {
-    const adminId     = req.user.userId;
-    const workspaceId = req.params.id;
-    const { token }   = req.params;
+    try {
+        const adminId = req.user.userId;
+        const workspaceId = req.params.id;
+        const { token } = req.params;
 
-    const workspace = await Workspace.findById(workspaceId);
-    if (!workspace) {
-        return res.status(404).json({ message: 'Workspace not found' });
+        console.log(`[InviteController] Admin ${adminId} requesting to revoke token ${token}`);
+
+        const workspace = await Workspace.findById(workspaceId);
+        if (!workspace) {
+            console.warn(`[InviteController] Revoke failed: Workspace ${workspaceId} not found`);
+            return res.status(404).json({ message: 'Workspace not found' });
+        }
+        const member = workspace.members.find((m) => m.userId.toString() === adminId);
+        if (!member || member.role !== 'ADMIN') {
+            console.warn(`[InviteController] Revoke denied: User ${adminId} is not ADMIN`);
+            return res.status(403).json({ message: 'Only Admin can revoke invite links' });
+        }
+
+        const invite = await WorkspaceInvite.findOneAndUpdate(
+            { token, workspaceId },
+            { $set: { isRevoked: true } },
+            { new: true }
+        );
+        
+        if (!invite) {
+            console.warn(`[InviteController] Revoke failed: Token ${token} not found in DB`);
+            return res.status(404).json({ message: 'Invite link not found' });
+        }
+
+        console.log(`[InviteController] Successfully revoked invite link ${token}`);
+        return res.json({ message: 'Invite link revoked' });
+    } catch (err) {
+        console.error(`[InviteController] System error in revokeInviteLink:`, err.message);
+        return res.status(500).json({ message: err.message });
     }
-    const member = workspace.members.find((m) => m.userId.toString() === adminId);
-    if (!member || member.role !== 'ADMIN') {
-      return res.status(403).json({ message: 'Only Admin can revoke invite links' });
-    }
-
-    const invite = await WorkspaceInvite.findOneAndUpdate(
-        { token, workspaceId },
-        {$set: {isRevoked: true}},
-        {new: true}
-    );
-    if (!invite) return res.status(404).json({ message: 'Invite link not found' });
-
-    invite.isRevoked = true;
-
-    return res.json({ message: 'Invite link revoked' });
-  } catch (err) {
-    return res.status(500).json({ message: err.message });
-  }
 }
 
 // ----- GET /api/workspaces/:id/invites ------------------------
 async function getInviteLinks(req, res) {
-  try {
-    const adminId     = req.user.userId;
-    const workspaceId = req.params.id;
+    try {
+        const adminId = req.user.userId;
+        const workspaceId = req.params.id;
 
-    const workspace = await Workspace.findById(workspaceId);
-    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+        console.log(`[InviteController] Admin ${adminId} fetching invite links for workspace ${workspaceId}`);
 
-    const member = workspace.members.find(
-      (m) => m.userId.toString() === adminId
-    );
-    if (!member || member.role !== 'ADMIN') {
-      return res.status(403).json({ message: 'Only Admin can view invite links' });
+        const workspace = await Workspace.findById(workspaceId);
+        if (!workspace) {
+            console.warn(`[InviteController] Fetch invites failed: Workspace ${workspaceId} not found`);
+            return res.status(404).json({ message: 'Workspace not found' });
+        }
+
+        const member = workspace.members.find((m) => m.userId.toString() === adminId);
+        if (!member || member.role !== 'ADMIN') {
+            console.warn(`[InviteController] Fetch invites denied: User ${adminId} is not ADMIN`);
+            return res.status(403).json({ message: 'Only Admin can view invite links' });
+        }
+
+        const invites = await WorkspaceInvite.find({ workspaceId }).sort({ createdAt: -1 });
+        console.log(`[InviteController] Successfully fetched ${invites.length} invite links`);
+        
+        return res.json({ data: invites });
+    } catch (err) {
+        console.error(`[InviteController] System error in getInviteLinks:`, err.message);
+        return res.status(500).json({ message: err.message });
     }
-
-    const invites = await WorkspaceInvite.find({ workspaceId })
-      .sort({ createdAt: -1 });
-
-    return res.json({ data: invites });
-  } catch (err) {
-    return res.status(500).json({ message: err.message });
-  }
 }
 
 //----- GET /api/workspaces/:id/requests/my ------------------------
 async function getMyJoinRequest(req, res) {
-  try {
-    const userId      = req.user.userId;
-    const workspaceId = req.params.id;
+    try {
+        const userId = req.user.userId;
+        const workspaceId = req.params.id;
 
-    const request = await JoinRequest.findOne({ workspaceId, userId })
-      .sort({ createdAt: -1 });
+        console.log(`[InviteController] User ${userId} checking their join request status in workspace ${workspaceId}`);
 
-    if (!request) {
-      return res.status(404).json({ message: 'No request found' });
+        const request = await JoinRequest.findOne({ workspaceId, userId }).sort({ createdAt: -1 });
+        if (!request) {
+            console.log(`[InviteController] No join request found for user ${userId} in workspace ${workspaceId}`);
+            return res.status(404).json({ message: 'No request found' });
+        }
+
+        console.log(`[InviteController] Found request ${request._id} for user ${userId}`);
+        return res.json({ data: request });
+    } catch (err) {
+        console.error(`[InviteController] System error in getMyJoinRequest:`, err.message);
+        return res.status(500).json({ message: err.message });
     }
-
-    return res.json({ data: request });
-  } catch (err) {
-    return res.status(500).json({ message: err.message });
-  }
 }
 
 module.exports = {

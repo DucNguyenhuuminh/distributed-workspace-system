@@ -9,6 +9,7 @@ app.use(express.json());
 app.use('/api/files/internal', require('./routes/internal.routes'));
 app.use('/api/files', require('./routes/file.routes'));
 app.use('/api/files', require('./routes/share.routes'));
+app.use('/api/files', require('./routes/comment.routes'));
 app.use('/api/files-worker', require('./routes/file-worker.routes'))
 app.get('/health', (_,res) => res.json({status: "OK", service: 'file-service'}));
 app.use((_,res) => res.status(404).json({message: "Route not exist"}));

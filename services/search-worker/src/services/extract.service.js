@@ -46,7 +46,7 @@ async function downloadFile(objectName, originalName) {
     if (!url) {
         throw new Error('No download URL returned from storage service');
     }
-    
+    console.log(`[ExtractService] URL tải file thực tế là: ${url}`);
     const fileResponse = await axios.get(url, {responseType: 'arraybuffer'});
     return Buffer.from(fileResponse.data);
 }

@@ -6,45 +6,69 @@ const extractService = require('../services/extract.service');
 const FILE_SERVICE_URL = process.env.FILE_SERVICE_URL;
 
 async function saveEmbedding(documentId, textEmbedding, imageEmbedding) {
-  await axios.patch(
-    `${FILE_SERVICE_URL}/api/files/internal/${documentId}/embedding`,
-    { textEmbedding, imageEmbedding }
-  );
+  const targetUrl = `${FILE_SERVICE_URL}/api/files/internal/${documentId}/embedding`;
+  console.log(`[FileHandler] Sending PATCH embedding vectors to: ${targetUrl}`);
+  
+  try {
+    const response = await axios.patch(targetUrl, { textEmbedding, imageEmbedding });
+    console.log(`[FileHandler] File-Service response:`, response.data?.message || 'Success');
+  } catch (err) {
+    const realError = err.response?.data?.message || err.response?.data || err.message;
+    console.error(`[FileHandler] Failed to save embedding via internal API for doc ${documentId}:`, realError);
+    throw err;
+  }
 }
 
-async function indexDocument({ documentId, objectName, mimeType, originalName, workspaceId, uploadedBy }) {
+async function indexDocument(payload) {
+  const documentId = payload.documentId || payload.fileId;
+  const { objectName, mimeType, originalName } = payload;
+
   if (!documentId || !objectName) {
-    console.warn('[FileHandler] Skip — missing documentId or objectName');
+    console.warn(`[FileHandler] Skip — missing identification data. documentId: ${documentId}, objectName: ${objectName}`);
     return;
   }
 
   const category = extractService.getMimeCategory(mimeType);
   if (!category) {
-    console.log(`[FileHandler] Skip — unsupported MIME: ${mimeType}`);
+    console.log(`[FileHandler] Skip — unsupported MIME type: ${mimeType}`);
     return;
   }
 
-  const buffer = await extractService.downloadFile(objectName, originalName);
+  try {
+    console.log(`[FileHandler] Downloading file from MinIO: ${objectName}`);
+    const buffer = await extractService.downloadFile(objectName, originalName);
+    console.log(`[FileHandler] Downloaded buffer size: ${buffer.length} bytes`);
 
-  let textEmbedding  = null;
-  let imageEmbedding = null;
+    let textEmbedding  = null;
+    let imageEmbedding = null;
 
-  if (category === 'text') {
-    const text = await extractService.extractText(buffer, mimeType);
-    if (text && text.length > 0) {
-      textEmbedding = await embedService.embedText(text);
+    if (category === 'text') {
+      console.log(`[FileHandler] Extracting text using Apache Tika...`);
+      const text = await extractService.extractText(buffer, mimeType);
+      
+      if (text && text.trim().length > 0) {
+        console.log(`[FileHandler] Extracting text vector using Xenova Local AI...`);
+        textEmbedding = await embedService.embedText(text);
+      } else {
+        console.warn(`[FileHandler] Apache Tika returned empty or blank text for doc: ${documentId}`);
+      }
+    } else if (category === 'image') {
+      console.log(`[FileHandler] Extracting image vector using CLIP Local AI...`);
+      imageEmbedding = await embedService.embedImage(buffer);
     }
-  } else if (category === 'image') {
-    imageEmbedding = await embedService.embedImage(buffer);
-  }
 
-  if (!textEmbedding && !imageEmbedding) {
-    console.log(`[FileHandler] Skip — no embedding generated: ${documentId}`);
-    return;
-  }
+    if (!textEmbedding && !imageEmbedding) {
+      console.log(`[FileHandler] Skip DB Update — No embedding vector generated for doc: ${documentId}`);
+      return;
+    }
 
-  await saveEmbedding(documentId, textEmbedding, imageEmbedding);
-  console.log(`[FileHandler] Embedded [${category}]: ${documentId}`);
+    console.log(`[FileHandler] Calling File-Service to save vectors into MongoDB...`);
+    await saveEmbedding(documentId, textEmbedding, imageEmbedding);
+    console.log(`[FileHandler] SUCCESS: Document [${category}] fully indexed and embedded: ${documentId}`);
+
+  } catch (err) {
+    console.error(`[FileHandler] CRITICAL ERROR inside indexDocument for doc ${documentId}:`, err.message);
+  }
 }
 
 const forwardToNotification = async (eventName, data) => {
@@ -66,18 +90,17 @@ async function removeEmbedding(documentId) {
 
 const fileHandlers = {
   [EVENTS.FILE_MERGED]: async (job) => {
-    const { fileId, objectName, mimeType, 
-      originalName, workspaceId, uploadedBy } = job.data;
+    const { fileId, objectName, mimeType, originalName, workspaceId, uploadedBy } = job.data;
     console.log(`[FileHandler] FILE_MERGED — ${fileId}`);
+    await forwardToNotification(EVENTS.FILE_MERGED,job.data);
     await indexDocument({
-      fileId:   fileId,
+      documentId:   fileId,
       objectName:   objectName,
       mimeType,
       originalName: originalName || '',
       workspaceId,
       uploadedBy,
     });
-    await forwardToNotification(EVENTS.FILE_MERGED,job.data);
   },
 
   [EVENTS.FILE_TRASHED]: async (job) => {
@@ -90,8 +113,7 @@ const fileHandlers = {
   },
 
   [EVENTS.FILE_RESTORED]: async (job) => {
-    const { fileId, objectName, mimeType, originalName, 
-      workspaceId, uploadedBy } = job.data;
+    const { fileId, objectName, mimeType, originalName, workspaceId, uploadedBy } = job.data;
     console.log(`[FileHandler] FILE_RESTORED — ${fileId}`);
     await indexDocument({
       documentId:   fileId,

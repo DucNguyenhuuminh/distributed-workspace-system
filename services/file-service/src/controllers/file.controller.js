@@ -315,10 +315,17 @@ async function getFileLink(req,res) {
             }
         }else {
             try {
+                const targetUrl = `${process.env.WORKSPACE_SERVICE_URL}/api/workspaces/internal/${file.workspaceId}`;
+                console.log(`[FileController] Checking permissions via Workspace Service: GET ${targetUrl}`);
+
                 const response = await axios.get(`${WORKSPACE_SERVICE_URL}/api/workspaces/internal/${file.workspaceId}`,
                     {headers: {Authorization: req.headers.authorization}});
+
                 const workspace = response.data?.data;
-                if (!workspace) return res.status(404).json({ message: "Workspace not found" });
+                if (!workspace) {
+                    console.warn(`[FileController] Workspace Verified Fail: URL valid but data is empty for ID ${file.workspaceId}`);
+                    return res.status(404).json({ message: "Workspace not found" });
+                }
                 const member = workspace.members.find(m => m.userId.toString() === userId);
                 if (!member) {
                     console.warn(`[FileController] Get link failed: User ${userId} is not in workspace ${file.workspaceId}`);
@@ -332,8 +339,25 @@ async function getFileLink(req,res) {
                     return res.status(403).json({ message: "You not have permission in this workspace" });
                 }
             } catch(err) {
-                console.error(`[FileController] System error checking workspace permissions:`, err.message);
-                return res.status(500).json({message: "Cannot connect to workspace-service"});
+                const realError = err.response?.data?.message || err.response?.data || err.message;
+                const statusCode = err.response?.status || 500;
+
+                console.error(`\n[FileController] ERROR CHECKING WORKSPACE PERMISSIONS`);
+                console.error(`- Target URL: ${process.env.WORKSPACE_SERVICE_URL}/api/workspaces/internal/${file.workspaceId}`);
+                console.error(`- HTTP Status Received: ${statusCode}`);
+                console.error(`- Message from Workspace Service:`, realError);
+                if (err.stack && statusCode === 500) console.error(err.stack);
+                console.error(`------------------------------------------------------------------\n`);
+
+                if (statusCode === 404) {
+                    return res.status(404).json({ 
+                        message: `Route not exist on workspace-service. Please check workspace internal routes. Details: ${JSON.stringify(realError)}` 
+                    });
+                }
+
+                return res.status(statusCode).json({ 
+                    message: `Failed to authenticate workspace access: ${typeof realError === 'string' ? realError : 'Internal Service Error'}` 
+                });
             }
         }
 

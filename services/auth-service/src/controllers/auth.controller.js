@@ -214,12 +214,36 @@ async function findByEmail(req,res) {
     }
 }
 
+//-------GET /api/auth/internal/find-by-id-----------
+async function findById(req,res) {
+    try {
+        const {userId} = req.query;
+
+        if (!userId) {
+            return res.status(400).json({ message: 'userId is required' });
+        }
+
+        const user = await User.findById(userId).select('-password');
+        if (!user) {
+            console.warn(`[AuthController] Internal Request - Not found user: ${userId}`);
+            return res.status(404).json({message: "User not exist"});
+        }
+        return res.json({data: user});
+    } catch(err) {
+        if (err.name === 'CastError') {
+            return res.status(400).json({message: "Invalid userId format"});
+        }
+        console.error(`[AuthController] Internal error findById:`, err.message);
+        return res.status(500).json({message: err.message});
+    }
+}
 
 module.exports = {
     register,
     login,
     getProfile,
     findByEmail,
+    findById,
     changePassword,
     forgotPassword,
     resetPassword

@@ -54,7 +54,25 @@ async function checkHash(req,res) {
                 folderId: folderId || null,
                 physicalFileId: existingPhysicalFile._id,
                 uploadedBy: userId,
+                textEmbedding: existingPhysicalFile.textEmbedding,
+                imageEmbedding: existingPhysicalFile.imageEmbedding,
             });
+
+            try {
+                await addJob(
+                    queueForEvent(EVENTS.FILE_MERGED),
+                    EVENTS.FILE_MERGED,
+                    {
+                        uploadedBy: userId,
+                        originalName: newDocument.originalName,
+                        workspaceId: newDocument.workspaceId,
+                        fileId: newDocument._id
+                    },
+                    { ...DEFAULT_JOB_OPTIONS, jobId: jobIdFor(EVENTS.FILE_MERGED, `dup_${newDocument._id}`) }
+                );
+            } catch (err) {
+                console.error('[Queue Error] Failed to notify duplicated file:', err.message);
+            }                                   
 
             console.log(`[FileWorkerController] Deduplication successful. Instant copy created. Document ID: ${newFile._id}`);
             return res.status(200).json({message: "Deduplication successful. File copy instantly", data: {document: newFile, isDuplicate: true}});

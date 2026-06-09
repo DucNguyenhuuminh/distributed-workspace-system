@@ -1,4 +1,5 @@
 const axios = require('axios');
+const mongoose = require('mongoose');
 const {addJob} = require('shared/queue/queueProducer');
 const {queueForEvent, jobIdFor, EVENTS, DEFAULT_JOB_OPTIONS} = require('shared/queue/queue.config');
 const Document = require('../models/documents.model');
@@ -296,13 +297,31 @@ async function getStats(req, res) {
 }
 
 //-----------PATCH /api/files/internal/:id/embedding-----------
-async function updateEmbedding(req,res) {
+async function updateEmbedding(req, res) {
   try {
-    const {id} = req.params;
-    const {textEmbedding, imageEmbedding} = req.body;
+    const { id } = req.params;
+    const { textEmbedding, imageEmbedding } = req.body;
 
-    await Document.findByIdAndUpdate(id, {textEmbedding, imageEmbedding}, {new: true}).setOptions({includeDeleted: true});
-  } catch(err) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      console.warn(`[InternalFile] Skip updating embedding: ID not correct in mongoDB (${id})`);
+      return res.status(400).json({ message: "ID format invalid" });
+    }
+
+    const updatedDoc = await Document.findByIdAndUpdate(
+      id, 
+      { $set: { textEmbedding, imageEmbedding } }, 
+      { new: true }
+    ).setOptions({ includeDeleted: true });
+
+    if (!updatedDoc) {
+      console.warn(`[InternalFile] Not found file to update embedding: ${id}`);
+      return res.status(404).json({ message: "Document not found to update embedding" });
+    }
+
+    console.log(`[InternalFile] Successfully updated embedding vectors for document: ${id}`);
+    return res.json({ message: "Embedding updated successfully", data: updatedDoc });
+  } catch (err) {
+    console.error(`[InternalFile] Error updating embedding:`, err.message);
     return res.status(500).json({ message: err.message });
   }
 }
