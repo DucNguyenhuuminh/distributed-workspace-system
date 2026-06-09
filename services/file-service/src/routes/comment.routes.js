@@ -3,7 +3,7 @@ const {getComments, addComment, deleteComment, createComment, updateComment} = r
 const {authMiddleware} = require('shared/middlewares/auth.middleware');
 
 router.use(authMiddleware);
-router.post(':id/comments',                 createComment);
+router.post('/:id/comments',                 createComment);
 router.get('/:id/comments',                 getComments);
 router.put('/:id/comments/:commentId',      updateComment);
 router.delete('/:id/comments/:commentId',   deleteComment);

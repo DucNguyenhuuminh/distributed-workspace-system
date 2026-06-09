@@ -204,9 +204,9 @@ async function notificationProcessor(job) {
 
     try {
     await handler(job);
-    console.log(`[NotificationWorker] COMPLETED JOB ${job.id} | Event: ${job.name}`);
+    console.log(`[NotificationWorker] COMPLETED JOB ${job.id} | Event: ${job.name}\n`);
   } catch (err) {
-    console.error(`[NotificationWorker] FAILED JOB ${job.id} | Event: ${job.name}`);
+    console.error(`[NotificationWorker] FAILED JOB ${job.id} | Event: ${job.name}\n`);
     console.error(`[NotificationWorker] Error Details:`, err.message);
     if (err.stack) console.error(err.stack);
     throw err;

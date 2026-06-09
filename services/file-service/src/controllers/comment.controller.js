@@ -70,31 +70,32 @@ async function getComments(req, res) {
         const replyMap = {};
         
         allComments.forEach((c) => {
-            const obj = {
+            replyMap[c._id.toString()] = {
                 _id: c._id,
                 content: c.content,
                 createdBy: userMap[c.createdBy.toString()] || { _id: c.createdBy },
                 parentId: c.parentId,
                 createdAt: c.createdAt,
                 updatedAt: c.updatedAt,
+                deletedAt: c.deletedAt,
                 replies: [],
             };
-
-            if (!c.parentId) {
-                roots.push(obj);
-            } else {
-                const key = c.parentId.toString();
-                if (!replyMap[key]) {
-                    replyMap[key] = [];
+        });
+        
+        allComments.forEach((c) => {
+            const mappedComment = replyMap[c._id.toString()];
+            if (c.parentId) {
+                const parent = replyMap[c.parentId.toString()];
+                if (parent) {
+                    parent.replies.push(mappedComment);
+                }else {
+                    roots.push(mappedComment);
                 }
-                replyMap[key].push(obj);
+            }else {
+                roots.push(mappedComment);
             }
         });
         
-        roots.forEach((c) => {
-            c.replies = replyMap[c._id.toString()] || [];
-        });
-
         console.log(`[CommentController] Successfully retrieved ${roots.length} root comments for file ${fileId}`);
         return res.json({ data: { total: roots.length, comments: roots } });
     } catch (err) {

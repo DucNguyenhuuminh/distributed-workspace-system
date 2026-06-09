@@ -29,7 +29,6 @@ async function getPosts(req, res) {
     const userId      = req.user.userId;
     const workspaceId = req.params.id;
     const { page = 1, limit = 20 } = req.query;
-
     console.log(`[PostController] User ${userId} is fetching posts for workspace ${workspaceId} (Page: ${page}, Limit: ${limit})`);
 
     const { member } = await checkMembership(workspaceId, userId);
@@ -38,17 +37,16 @@ async function getPosts(req, res) {
       return res.status(403).json({ message: 'Not a workspace member' });
     }
 
-    const skip  = (parseInt(page) - 1) * parseInt(limit);
+    const skip = (parseInt(page) - 1) * parseInt(limit);
     const total = await Post.countDocuments({ workspaceId });
     const posts = await Post.find({ workspaceId })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
-    console.log(`[PostController] Found ${posts.length} posts. Aggregating comment counts.`);
+    console.log(`[PostController] Found posts. Aggregating comment counts.`);
 
-    // Count comments for each post
-    const postIds      = posts.map((p) => p._id);
+    const postIds = posts.map((p) => p._id);
     const commentCounts = await PostComment.aggregate([
       { $match: { postId: { $in: postIds }, deletedAt: null } },
       { $group: { _id: '$postId', count: { $sum: 1 } } },
@@ -63,8 +61,6 @@ async function getPosts(req, res) {
       _id:          p._id,
       content:      p.content,
       createdBy:    p.createdBy,
-      likeCount:    p.likes.length,
-      isLiked:      p.likes.map((l) => l.toString()).includes(userId),
       commentCount: countMap[p._id.toString()] || 0,
       createdAt:    p.createdAt,
       updatedAt:    p.updatedAt,
@@ -256,29 +252,48 @@ async function getPostComments(req, res) {
     const comments = await PostComment.find({ postId }).sort({ createdAt: 1 });
     console.log(`[PostController] Found ${comments.length} raw comments for post ${postId}. Structuring tree.`);
 
+    const userIds = [...new Set(comments.map((c) => c.createdBy.toString()))];
+    const userMap = {};
+
+    if (userIds.length > 0) {
+        console.log(`[PostController] Fetching user details for ${userIds.length} unique authors`);
+        try {
+            for (const uid of userIds) {
+                const userRes = await axios.get(`${process.env.AUTH_SERVICE_URL}/api/auth/internal/find-by-id`, { params: { id: uid } });
+                const u = userRes.data.data;
+                userMap[uid] = { _id: u._id, username: u.username, email: u.email };
+            }
+        } catch (err) {
+            console.error(`[PostController] Failed to fetch user info from Auth Service: ${err.message}`);
+        }
+    }
+
     const roots    = [];
     const replyMap = {};
 
     comments.forEach((c) => {
-      const obj = {
-        _id:       c._id,
-        content:   c.content,
-        createdBy: c.createdBy,
-        parentId:  c.parentId,
-        createdAt: c.createdAt,
-        replies:   [],
+      replyMap[c._id.toString()] = {
+          _id: c._id,
+          content: c.content,
+          createdBy: userMap[c.createdBy.toString()] || { _id: c.createdBy },
+          parentId: c.parentId,
+          createdAt: c.createdAt,
+          replies: [],
       };
-      if (!c.parentId) {
-        roots.push(obj);
-      } else {
-        const key = c.parentId.toString();
-        if (!replyMap[key]) replyMap[key] = [];
-        replyMap[key].push(obj);
-      }
     });
 
-    roots.forEach((r) => {
-      r.replies = replyMap[r._id.toString()] || [];
+    comments.forEach((c) => {
+      const mappedComment = replyMap[c._id.toString()];
+      if (c.parentId) {
+          const parent = replyMap[c.parentId.toString()];
+          if (parent) {
+              parent.replies.push(mappedComment);
+          }else {
+              roots.push(mappedComment);
+          }
+      }else {
+          roots.push(mappedComment);
+      }
     });
 
     console.log(`[PostController] Successfully structured ${roots.length} root comments for post ${postId}`);
@@ -302,13 +317,11 @@ async function createPostComment(req, res) {
       console.warn(`[PostController] Create comment failed: Content is missing or empty`);
       return res.status(400).json({ message: 'Content is required' });
     }
-
     const { member } = await checkMembership(workspaceId, userId);
     if (!member) {
       console.warn(`[PostController] Create comment denied: User ${userId} is not a workspace member`);
       return res.status(403).json({ message: 'Not a workspace member' });
     }
-
     const post = await Post.findOne({ _id: postId, workspaceId });
     if (!post) {
       console.warn(`[PostController] Create comment failed: Post ${postId} not found`);
@@ -321,10 +334,6 @@ async function createPostComment(req, res) {
       if (!parent) {
         console.warn(`[PostController] Create comment failed: Parent comment ${parentId} not found`);
         return res.status(404).json({ message: 'Parent comment not found' });
-      }
-      if (parent.parentId) {
-        console.warn(`[PostController] Create comment failed: Attempted to reply to a reply (${parentId})`);
-        return res.status(400).json({ message: 'Cannot reply to a reply' });
       }
     }
 
