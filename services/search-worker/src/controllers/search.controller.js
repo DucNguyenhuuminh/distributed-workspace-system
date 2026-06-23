@@ -224,7 +224,7 @@ async function searchWithCosine({ res, q, workspaceId, userId, queryVector, embe
 
   if (docs.length === 0) {
     return res.json({
-      message: 'Search successfully',
+      message: 'Search successfully, no file found',
       data:    { query: q, total: 0, results: [] },
     });
   }

@@ -13,4 +13,5 @@ router.delete('/by-folders/force',   forceDeleteFilesByFolders)
 router.delete('/by-workspace/:id',  deletedByWorkspace);
 router.get('/by-admin/:id',         getFileByIdAdmin);
 router.patch('/:id/embedding',      updateEmbedding);
+
 module.exports = router;
